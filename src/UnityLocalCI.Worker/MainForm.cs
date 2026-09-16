@@ -67,16 +67,33 @@ public sealed class MainForm : Form
         _refresh.Tick += (_, _) => RefreshData();
         _refresh.Start();
 
+        Theme.Apply(this);
+
         LoadServiceLog();
         RefreshData();
         UpdateStatus();
+    }
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        Theme.ApplyTitleBar(this);
+    }
+
+    protected override void OnShown(EventArgs e)
+    {
+        base.OnShown(e);
+
+        // De novo depois de exibida: em algumas versoes do Windows o DWM ignora
+        // o atributo enquanto a janela ainda nao apareceu.
+        Theme.ApplyTitleBar(this);
     }
 
     // ------------------------------------------------------------------ layout
 
     private void BuildLayout()
     {
-        var tabs = new TabControl { Dock = DockStyle.Fill };
+        var tabs = new DarkTabControl { Dock = DockStyle.Fill };
         tabs.TabPages.Add(BuildProjectsTab());
         tabs.TabPages.Add(BuildBuildsTab());
         tabs.TabPages.Add(BuildServiceLogTab());
@@ -271,7 +288,7 @@ public sealed class MainForm : Form
             }
 
             grid.Rows[r].DefaultCellStyle.ForeColor = rows[r].Any(v => v is "FALHOU" or "INTERROMPIDA")
-                ? Color.Firebrick
+                ? Theme.Danger
                 : grid.DefaultCellStyle.ForeColor;
         }
     }
@@ -440,7 +457,7 @@ public sealed class MainForm : Form
         }
 
         _status.Text = texto;
-        _status.ForeColor = _controller.State == HostState.Falhou ? Color.Firebrick : SystemColors.ControlText;
+        _status.ForeColor = _controller.State == HostState.Falhou ? Theme.Danger : Theme.Text;
 
         _buildNow.Enabled = _controller.State == HostState.Rodando;
         _republish.Enabled = _controller.State == HostState.Rodando;
@@ -488,7 +505,7 @@ public sealed class MainForm : Form
         SelectionMode = DataGridViewSelectionMode.FullRowSelect,
         MultiSelect = false,
         RowHeadersVisible = false,
-        BackgroundColor = SystemColors.Window,
+        BackgroundColor = Theme.Surface,
         BorderStyle = BorderStyle.None,
         AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None,
     };
@@ -501,7 +518,7 @@ public sealed class MainForm : Form
         ScrollBars = ScrollBars.Both,
         WordWrap = false,
         Font = new Font("Consolas", 9f),
-        BackColor = SystemColors.Window,
+        BackColor = Theme.Surface,
     };
 
     private static DataGridViewTextBoxColumn TextColumn(string header, int width)

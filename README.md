@@ -84,6 +84,8 @@ A janela tem quatro abas:
 - **Log do serviço** — o que está acontecendo agora, ao vivo
 - **Configuração** — edita o `appsettings.json` pela interface, valida antes de gravar e oferece reiniciar o serviço
 
+A janela usa **tema escuro**, aplicado controle a controle: o WinForms não tem tema, cada controle pinta com as cores do sistema. A barra de título escurece por uma chamada ao DWM, e as abas são desenhadas pela própria aplicação, porque desenhar só os itens deixaria uma faixa clara à direita da última aba.
+
 Ela não guarda estado próprio: tudo o que mostra vem do mesmo SQLite que o serviço escreve, então nunca discorda do que aconteceu de verdade, e fechá-la não perde nada.
 
 Fechar pelo **X esconde na bandeja** e o serviço continua construindo. Sair de verdade é pelo menu da bandeja, que avisa que as builds param.

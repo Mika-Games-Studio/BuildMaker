@@ -27,7 +27,7 @@ public sealed class ConfigPanel : UserControl
         Dock = DockStyle.Bottom,
         AutoSize = false,
         Height = 70,
-        ForeColor = Color.Firebrick,
+        ForeColor = Theme.Danger,
         Padding = new Padding(4),
     };
 
@@ -44,7 +44,7 @@ public sealed class ConfigPanel : UserControl
 
     private void BuildLayout()
     {
-        var tabs = new TabControl { Dock = DockStyle.Fill };
+        var tabs = new DarkTabControl { Dock = DockStyle.Fill };
 
         // --- geral
         var geral = new TabPage("Geral") { Padding = new Padding(6) };
