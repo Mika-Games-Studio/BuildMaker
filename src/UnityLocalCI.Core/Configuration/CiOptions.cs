@@ -24,6 +24,9 @@ public sealed class SchedulerOptions
 
     /// <summary>Intervalo de reavaliacao quando um job esta adiado por falta de recurso.</summary>
     public int ResourceRecheckSeconds { get; set; } = 30;
+
+    /// <summary>De quanto em quanto tempo tentar reenviar artefatos com copia pendente.</summary>
+    public int PendingCopyRetryMinutes { get; set; } = 10;
 }
 
 public sealed class StateOptions

@@ -4,7 +4,7 @@ Serviço de integração contínua que roda inteiramente numa máquina Windows l
 
 Sem nuvem, sem servidor HTTP, sem API, sem painel web. A pasta de destino é a interface.
 
-**Estado atual: fase 1 (núcleo) concluída.** Ver [O que já existe](#o-que-já-existe-e-o-que-falta) ao final.
+**Estado atual: as três fases concluídas.** Ver [O que já existe](#o-que-já-existe-e-o-que-falta) ao final.
 
 ---
 
@@ -66,9 +66,9 @@ Todos os placeholders estão listados na seção seguinte. Enquanto houver um `P
 dotnet run --project src/UnityLocalCI.Worker
 ```
 
-Na fase 1 é uma aplicação de console. O registro como Windows Service é fase 3.
+Isso roda como aplicação de console, que é o modo de conferir a configuração. Para instalar como serviço, ver [Windows Service](#windows-service).
 
-> **Se o `.exe` reclamar que o .NET não foi encontrado:** o SDK está instalado no perfil do usuário (`%USERPROFILE%\.dotnet`) e o apphost só procura em `C:\Program Files\dotnet`. Rode por `dotnet UnityLocalCI.Worker.dll`, ou defina `DOTNET_ROOT`. Para o serviço da fase 3, instale o .NET para toda a máquina.
+> **Se o `.exe` reclamar que o .NET não foi encontrado:** o SDK está instalado no perfil do usuário (`%USERPROFILE%\.dotnet`) e o apphost só procura em `C:\Program Files\dotnet`. Rode por `dotnet UnityLocalCI.Worker.dll`, ou defina `DOTNET_ROOT`. Antes de registrar o Windows Service, instale o .NET para toda a máquina.
 
 ---
 
@@ -80,11 +80,12 @@ Tudo que precisa ser preenchido antes do primeiro uso real. Nada disso foi inven
 |---|---|---|
 | `PREENCHER-NOME-DO-PROJETO` | `Projects[].Name` | Nome do projeto. Identifica a fila, o estado e aparece nos arquivos de status. |
 | `PREENCHER-NOME-DO-PROJETO` | `Projects[].Repository.WorkspacePath` | Última pasta do caminho do workspace. |
-| `PREENCHER-NOME-DO-PROJETO` | `Projects[].ManualTriggerFile` | Nome do arquivo de gatilho manual (usado a partir da fase 2). |
+| `PREENCHER-NOME-DO-PROJETO` | `Projects[].ManualTriggerFile` | Nome do arquivo de gatilho manual. |
 | `PREENCHER-URL-DO-REPOSITORIO` | `Projects[].Repository.Url` | URL do repositório no Azure DevOps. |
 | `PREENCHER-VERSAO-DO-EDITOR` | `Defaults.Unity.EditorVersion` | Versão exata do editor, ex.: `6000.0.47f1`. Cada projeto pode sobrescrever a sua. |
 | `PREENCHER-PASTA-DE-DESTINO` | `Projects[].Publishing.ArtifactFolder` | Pasta onde o time pega o zip. |
-| `PREENCHER-DESTINO-RAIZ` | `Scheduler.GlobalStatusFile` | Raiz do compartilhamento, onde vai o `_STATUS-GERAL.txt` (fase 2). |
+| `PREENCHER-DESTINO-RAIZ` | `Scheduler.GlobalStatusFile` | Raiz do compartilhamento, onde vai o `_STATUS-GERAL.txt`. |
+| `PREENCHER-NOME-DO-PROJETO` | `tools/post-merge.hook` | Nome do projeto no hook, se for usá-lo. |
 
 Valores que já vêm prontos e você provavelmente quer conferir: `Branch` (`HML`), `PatCredentialName` (`UnityLocalCI_AzureDevOpsPat`), e os caminhos locais em `C:\ci\` (workspace, staging, state, logs, triggers).
 
@@ -144,7 +145,7 @@ merge na HML ──► GitWatcher (1 por projeto, polling + debounce)
 
 **Sucesso é o exit code, e só.** A pasta de saída pode existir cheia de artefatos parciais mesmo quando o build falhou.
 
-**Falha ao copiar não descarta o artefato.** O zip nasce no staging local. Se o destino estiver fora do ar ou sem permissão, a build permanece bem-sucedida, o zip continua no staging e a cópia fica marcada como pendente. O reenvio automático é fase 3.
+**Falha ao copiar não descarta o artefato.** O zip nasce no staging local. Se o destino estiver fora do ar ou sem permissão, a build permanece bem-sucedida, o zip continua no staging e a cópia fica marcada como pendente. O reenvio é automático: na inicialização e a cada 10 minutos.
 
 ### Invocação do Unity: desvio consciente da especificação
 
@@ -160,7 +161,7 @@ unity --non-interactive --no-banner build <workspace>
       --args "-ciBuildNumber 42 -ciCommitSha <sha> -ciBranch HML -ciOutputPath <saída>"
 ```
 
-O caminho de saída vai pelos dois nomes (`-buildOutput` via `--output-path` e `-ciOutputPath` via `--args`), então o `Builder.cs` da fase 2 pode ler qualquer um.
+O caminho de saída vai pelos dois nomes (`-buildOutput` via `--output-path` e `-ciOutputPath` via `--args`), então o [`Builder.cs`](unity/Builder.cs) lê qualquer um dos dois.
 
 Também não usamos `--format json`: o log é transmitido em tempo real para `logs/build-{id}.log` enquanto roda, o que não conviveria com uma saída JSON única no fim. Se o build travar e for morto pelo timeout, o que já saiu está gravado.
 
@@ -185,8 +186,8 @@ UnityLocalCI.sln
 │       ├── Publishing/           IArtifactPublisher e FolderPublisher
 │       └── Notifications/        INotifier e LogNotifier
 ├── tests/UnityLocalCI.Tests/     52 testes xUnit
-├── unity/                        Builder.cs (fase 2)
-├── tools/                        scripts de instalação (fase 3)
+├── unity/                        Builder.cs e instrucoes de instalacao
+├── tools/                        buildar-tudo, install-service, set-secrets, post-merge
 └── config/
 ```
 
@@ -225,12 +226,185 @@ dotnet test
 - Segredos no Windows Credential Manager
 - Execução como aplicação de console
 
-### Fase 2 — usabilidade (não começou)
+### Fase 2 — usabilidade (em andamento)
 
-Pasta `latest\` trocada por rename, `_STATUS.txt`, `_HISTORICO.txt`, `_STATUS-GERAL.txt`, `rodar.bat`, cópia do log para `_logs\`, gatilho manual por arquivo observado, retenção por contagem, `Builder.cs`.
+| Item | Estado |
+|---|---|
+| `Builder.cs` em `unity/`, com instruções de instalação | **pronto** |
+| Contrato de log entre o `Builder.cs` e o pipeline | **pronto** |
+| `_STATUS.txt`, `_HISTORICO.txt` e `_STATUS-GERAL.txt` | **pronto** |
+| Pasta `latest\` trocada por rename de diretório | **pronto** |
+| `rodar.bat` no zip e em `latest\` | **pronto** |
+| Cópia do log da build para `_logs\` | **pronto** |
+| Gatilho manual por arquivo observado | **pronto** |
+| Retenção por contagem | **pronto** |
 
-> Os campos de configuração da fase 2 (`MaintainLatestFolder`, `WriteStatusFiles`, `IncludeLauncher`, `Retention`, `ManualTriggerFile`, `GlobalStatusFile`) já existem e são validados, mas ainda não têm efeito.
+**Fase 2 concluída.**
 
-### Fase 3 — operação (não começou)
+O `Builder.cs` vem primeiro porque é ele que faz o Unity retornar código diferente de zero em build quebrada. Enquanto ele não estiver instalado no projeto Unity, o pipeline pode publicar lixo — ver [`unity/README.md`](unity/README.md).
 
-Teams por webhook, reenvio de artefato pendente, hook `post-merge`, `install-service.ps1`, `set-secrets.ps1`, registro como Windows Service.
+### A pasta como interface
+
+Sem painel web, a própria pasta comunica o estado. O que o time encontra hoje no destino de cada projeto:
+
+```
+\\build01\builds\crash\hml\
+├── _STATUS.txt        resultado da última build, com o erro resumido em caso de falha
+├── _HISTORICO.txt     últimas 20 builds que rodaram, uma linha cada
+└── _logs\
+    └── build-42.log   o log completo, ao lado do status que aponta para ele
+```
+
+E na raiz do compartilhamento, um arquivo consolidando todos os projetos, para não ser preciso abrir uma pasta por jogo:
+
+```
+CI LOCAL — 16/09/2026 15:27
+
+PROJETO  ESTADO       ÚLTIMA BUILD  COMMIT   ARQUIVO
+Crash    ok           16/09 15:27   a1b2c3d  Crash-HML-20260916-a1b2c3d.zip
+Mines    construindo  (iniciou 15:22)  9f8e7d6  —
+Rocket   FALHOU       15/09 18:02   4e5f6a7  ver _logs\build-39.log
+
+Fila: 0 aguardando  |  Em execução: 1 de 2
+```
+
+O `_STATUS-GERAL.txt` é reescrito quando qualquer build termina **e** quando uma entra em execução, para que quem o abrir durante uma build de 30 minutos veja `construindo`, e não o resultado da anterior. A escrita é serializada entre projetos: duas builds terminando juntas não podem produzir um arquivo que descreve um estado que nunca existiu.
+
+A pasta `latest\` é a build mais recente já descompactada: quem só quer testar entra, roda o `rodar.bat` e joga. A troca é feita por rename de diretório — a build nova é copiada inteira para `latest.new\` e só então assume o nome —, porque copiar por cima deixaria a pasta em estado parcial por vários segundos, e quem a abrisse nesse intervalo pegaria uma build quebrada sem nenhum sinal disso.
+
+### `rodar.bat`: por que o duplo clique no `index.html` não serve
+
+Uma build WebGL não roda por `file://`: o navegador bloqueia `.wasm` e `.data` nesse protocolo, e o resultado é uma tela preta sem mensagem de erro. O `rodar.bat` sobe um servidor estático na própria pasta e abre o navegador. Ele tenta, nesta ordem, o que existir na máquina de quem baixou:
+
+1. `python -m http.server`
+2. `npx serve`
+3. PowerShell, pelo `_servidor.ps1` que acompanha o launcher
+
+Se nada existir, ele explica o motivo e aponta onde instalar, em vez de falhar em silêncio. Para usar outra porta: `rodar.bat 8090`.
+
+> **Desvio da especificação.** Ela previa, como terceira estratégia, um executável .NET de arquivo único embutido no zip. Trocamos por PowerShell porque ele já está em toda máquina Windows e não acrescenta dezenas de MB a **cada** artefato. O servidor em PowerShell ainda tem uma vantagem sobre os outros dois: ele envia `Content-Encoding` para arquivos `.br` e `.gz`, então roda até uma build compactada com Brotli — exatamente o caso que quebraria num `python -m http.server`.
+
+### Construir agora, sem esperar o merge
+
+Não há endpoint HTTP nem painel. Cada projeto observa o arquivo apontado por seu `ManualTriggerFile`: criar ou tocar esse arquivo enfileira uma build do HEAD atual, e o serviço o apaga ao consumir.
+
+Para um projeto, um atalho na área de trabalho apontando para um `.bat` de uma linha resolve:
+
+```bat
+type nul > C:\ci\triggers\crash.txt
+```
+
+Para todos de uma vez, [`tools/buildar-tudo.bat`](tools/buildar-tudo.bat) lê o `appsettings.json` e toca o gatilho de cada projeto habilitado:
+
+```bash
+tools\buildar-tudo.bat
+```
+
+Tocar N arquivos não dispara N builds simultâneas: cada fila recebe seu job e o scheduler distribui conforme as vagas livres. Para um subconjunto, passe os nomes:
+
+```bash
+tools\buildar-tudo.bat -Projeto Crash,Mines
+```
+
+O gatilho manual **ignora o debounce** de propósito — ele existe justamente para dizer "constrói agora" — e reconstrói o mesmo commit se você pedir, o que é o caso comum depois de uma falha.
+
+### Retenção
+
+Executada ao fim de cada build: mantém as `KeepLastBuilds` builds **bem-sucedidas** mais recentes e apaga, das demais, o zip no destino, o zip no staging, o log local e a cópia em `_logs\`.
+
+Três detalhes que a implementação garante:
+
+- **Contam-se as bem-sucedidas.** Uma sequência de falhas não empurra para fora o último artefato que de fato funciona.
+- **Cópia pendente nunca perde o staging.** Se o destino estava fora do ar, aquele zip só existe ali.
+- **A poda é guiada pelo banco, não por varredura da pasta.** Ela apaga exatamente os arquivos que cada build registrou, e nunca um `_STATUS.txt`, a pasta `latest\`, ou um zip que alguém copiou para lá na mão.
+
+A retenção também roda quando um job está adiado por falta de disco. Sem isso ele esperaria para sempre: a poda só acontece ao fim de uma build, e nenhuma ia começar.
+
+---
+
+## Operação
+
+### Notificação no Teams
+
+Opcional. Sem `Notifications.TeamsWebhookCredentialName` configurado, o notificador não faz nada.
+
+A URL do webhook é um segredo como qualquer outro — quem a tem pode postar no canal —, então ela vive no Credential Manager e a configuração guarda só o nome:
+
+```bash
+cmdkey /generic:UnityLocalCI_TeamsWebhook /user:unitylocalci /pass:https://SEU-WEBHOOK
+```
+
+```jsonc
+"Notifications": { "TeamsWebhookCredentialName": "UnityLocalCI_TeamsWebhook" }
+```
+
+O payload é um **Adaptive Card**, que é o formato esperado pelos webhooks de fluxo do Power Automate. Se o seu canal ainda usa um connector antigo do Office 365, a URL espera o formato `MessageCard`: troque o corpo de `TeamsNotifier.BuildPayload`, que é o único lugar que conhece o formato.
+
+Falha ao notificar nunca muda o resultado de uma build que já terminou — vira aviso no log.
+
+### Sinal em loopback e hook `post-merge`
+
+O serviço ouve em `http://127.0.0.1:<HookSignalPort>/`, **só em loopback**. Não é um painel e não é uma API de artefatos: o prefixo é `127.0.0.1` (não `localhost`, não `+`), então nada fora da máquina alcança a porta, não há hostname para configurar e não há firewall para liberar.
+
+| Rota | Efeito |
+|---|---|
+| `POST /` ou `GET /` | Antecipa a verificação. Corpo com o nome do projeto, ou vazio para todos. |
+| `POST /api/builds/{id}/republish` | Reenvia o artefato de uma build com cópia pendente. |
+
+O hook **nunca enfileira direto**: ele só antecipa a verificação do watcher, que continua sendo quem conhece o debounce e o último sha. É otimização de latência e pode falhar sem consequência — o polling continua sendo a fonte da verdade, e nenhum merge se perde.
+
+Instalação: copie [`tools/post-merge.hook`](tools/post-merge.hook) para `.git/hooks/post-merge` no clone de quem faz merge, ajuste `PROJETO` e `SERVIDOR`, e marque como executável.
+
+```bash
+curl --data "Crash" http://127.0.0.1:8081/
+```
+
+> **Um POST sem corpo recebe 411.** O `http.sys` do Windows rejeita `POST` sem `Content-Length` antes de a requisição chegar ao serviço — não dá para tratar isso de dentro do `HttpListener`. Por isso a rota de sinal também aceita `GET`, e o hook envia `--data`. A rota de reenvio continua só por `POST`, porque ela tem efeito.
+
+### Reenvio de artefato pendente
+
+Quando o compartilhamento está fora do ar, a build permanece bem-sucedida e o zip fica no staging marcado como `PendingCopy`. O reenvio acontece sozinho: na inicialização e a cada `PendingCopyRetryMinutes` (padrão 10). A máquina que caiu durante a noite reencontra o compartilhamento sem ninguém lembrar.
+
+Para forçar agora:
+
+```bash
+curl -X POST --data "" http://127.0.0.1:8081/api/builds/42/republish
+```
+
+O staging **nunca** é apagado pelo reenvio. Quem remove é a retenção, e só depois de a cópia estar confirmada.
+
+### Windows Service
+
+```bash
+dotnet publish src/UnityLocalCI.Worker -c Release -o publicado
+```
+
+```bash
+powershell -ExecutionPolicy Bypass -File tools\install-service.ps1
+```
+
+O script confere .NET, Git e Unity CLI, cria os diretórios de cada projeto **escrevendo de verdade em cada um** (permissão só se descobre tentando), avisa quais credenciais faltam, registra o serviço com reinício automático e o inicia.
+
+Para rodar sob uma conta de serviço:
+
+```bash
+powershell -ExecutionPolicy Bypass -File tools\install-service.ps1 -Conta "DOMINIO\svc-ci"
+```
+
+> **Duas armadilhas de conta de serviço.** O Credential Manager é **por usuário**: os segredos precisam ser gravados logado como a conta que executa o serviço, senão ele sobe e não encontra nada. E o .NET instalado no perfil de um usuário (`%USERPROFILE%\.dotnet`) não é visto por outra conta — instale-o para a máquina inteira, ou defina `DOTNET_ROOT` no ambiente do serviço. O `install-service.ps1` avisa sobre as duas.
+
+> Os demais campos de configuração da fase 2 (`MaintainLatestFolder`, `WriteStatusFiles`, `IncludeLauncher`, `Retention`, `ManualTriggerFile`, `GlobalStatusFile`) já existem e são validados, mas ainda não têm efeito.
+
+### Fase 3 — operação (concluída)
+
+| Item | Estado |
+|---|---|
+| Notificador do Teams por webhook | **pronto** |
+| Reenvio de artefato com cópia pendente | **pronto** |
+| Hook `post-merge` e sinal em loopback | **pronto** |
+| `install-service.ps1` e `set-secrets.ps1` | **pronto** |
+| Registro como Windows Service | **pronto** |
+
+> **Desvio da especificação, e por quê.** A seção 5.4 diz que não há servidor HTTP, API nem porta exposta; a lista da fase 3 pede um `POST /api/builds/{id}/republish`. As duas coisas foram reconciliadas num ouvinte **só de loopback**, que é o mesmo previsto na seção 5.1 para o sinal do hook: uma porta em `127.0.0.1` não é exposta, não pede liberação de firewall e não é alcançável de fora da máquina. Não há painel, não há link para compartilhar e a pasta continua sendo a interface.
+>
+> O reenvio, além disso, **não depende** desse endpoint: ele acontece sozinho na inicialização e a cada 10 minutos. A rota existe para forçar agora, não para o mecanismo funcionar.

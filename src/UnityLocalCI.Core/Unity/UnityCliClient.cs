@@ -89,7 +89,7 @@ public sealed class UnityCliClient : IUnityCliClient
                 ExitCode: -1,
                 TimedOut: true,
                 ErrorSummary: $"Build excedeu o timeout de {request.Timeout.TotalMinutes:0} minutos e foi encerrada.",
-                CompilationErrors: summary.CompilationErrors,
+                CompilationErrors: summary.AllErrors,
                 Warnings: summary.Warnings);
         }
 
@@ -97,13 +97,13 @@ public sealed class UnityCliClient : IUnityCliClient
         // artefatos parciais mesmo quando o build falhou.
         var errorSummary = result.ExitCode == 0
             ? null
-            : summary.Summary ?? $"Unity terminou com exit code {result.ExitCode} sem erro de compilacao identificavel no log.";
+            : summary.Summary ?? $"Unity terminou com exit code {result.ExitCode} sem erro identificavel no log.";
 
         return new UnityBuildResult(
             result.ExitCode,
             TimedOut: false,
             ErrorSummary: errorSummary,
-            CompilationErrors: summary.CompilationErrors,
+            CompilationErrors: summary.AllErrors,
             Warnings: summary.Warnings);
     }
 
