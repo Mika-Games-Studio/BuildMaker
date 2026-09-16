@@ -232,8 +232,8 @@ dotnet test
 | `Builder.cs` em `unity/`, com instruções de instalação | **pronto** |
 | Contrato de log entre o `Builder.cs` e o pipeline | **pronto** |
 | `_STATUS.txt`, `_HISTORICO.txt` e `_STATUS-GERAL.txt` | **pronto** |
-| Pasta `latest\` trocada por rename de diretório | a fazer |
-| `rodar.bat` no zip e em `latest\` | a fazer |
+| Pasta `latest\` trocada por rename de diretório | **pronto** |
+| `rodar.bat` no zip e em `latest\` | **pronto** |
 | Cópia do log da build para `_logs\` | **pronto** |
 | Gatilho manual por arquivo observado | a fazer |
 | Retenção por contagem | a fazer |
@@ -267,7 +267,19 @@ Fila: 0 aguardando  |  Em execução: 1 de 2
 
 O `_STATUS-GERAL.txt` é reescrito quando qualquer build termina **e** quando uma entra em execução, para que quem o abrir durante uma build de 30 minutos veja `construindo`, e não o resultado da anterior. A escrita é serializada entre projetos: duas builds terminando juntas não podem produzir um arquivo que descreve um estado que nunca existiu.
 
-A linha `Jogar.....: abra latest\rodar.bat` só aparece no `_STATUS.txt` quando o arquivo existe de fato — ela entra junto com a pasta `latest\`.
+A pasta `latest\` é a build mais recente já descompactada: quem só quer testar entra, roda o `rodar.bat` e joga. A troca é feita por rename de diretório — a build nova é copiada inteira para `latest.new\` e só então assume o nome —, porque copiar por cima deixaria a pasta em estado parcial por vários segundos, e quem a abrisse nesse intervalo pegaria uma build quebrada sem nenhum sinal disso.
+
+### `rodar.bat`: por que o duplo clique no `index.html` não serve
+
+Uma build WebGL não roda por `file://`: o navegador bloqueia `.wasm` e `.data` nesse protocolo, e o resultado é uma tela preta sem mensagem de erro. O `rodar.bat` sobe um servidor estático na própria pasta e abre o navegador. Ele tenta, nesta ordem, o que existir na máquina de quem baixou:
+
+1. `python -m http.server`
+2. `npx serve`
+3. PowerShell, pelo `_servidor.ps1` que acompanha o launcher
+
+Se nada existir, ele explica o motivo e aponta onde instalar, em vez de falhar em silêncio. Para usar outra porta: `rodar.bat 8090`.
+
+> **Desvio da especificação.** Ela previa, como terceira estratégia, um executável .NET de arquivo único embutido no zip. Trocamos por PowerShell porque ele já está em toda máquina Windows e não acrescenta dezenas de MB a **cada** artefato. O servidor em PowerShell ainda tem uma vantagem sobre os outros dois: ele envia `Content-Encoding` para arquivos `.br` e `.gz`, então roda até uma build compactada com Brotli — exatamente o caso que quebraria num `python -m http.server`.
 
 > Os demais campos de configuração da fase 2 (`MaintainLatestFolder`, `WriteStatusFiles`, `IncludeLauncher`, `Retention`, `ManualTriggerFile`, `GlobalStatusFile`) já existem e são validados, mas ainda não têm efeito.
 

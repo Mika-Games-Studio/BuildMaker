@@ -68,6 +68,37 @@ public class FolderPublisherTests : IDisposable
     }
 
     [Fact]
+    public async Task Publicar_tambem_atualiza_a_pasta_latest()
+    {
+        var (publisher, context, artifact) = await SetupAsync();
+
+        Directory.CreateDirectory(Path.Combine(context.BuildOutputPath, "Build"));
+        await File.WriteAllTextAsync(Path.Combine(context.BuildOutputPath, "index.html"), "a build");
+        await File.WriteAllTextAsync(Path.Combine(context.BuildOutputPath, "rodar.bat"), "@echo off");
+
+        var result = await publisher.PublishAsync(artifact, context, default);
+
+        Assert.True(result.Success);
+        Assert.Equal("a build", await File.ReadAllTextAsync(Path.Combine(_destination, "latest", "index.html")));
+        Assert.True(File.Exists(Path.Combine(_destination, "latest", "rodar.bat")));
+        Assert.Empty(context.Warnings);
+    }
+
+    [Fact]
+    public async Task Falha_na_latest_nao_derruba_a_publicacao_do_zip()
+    {
+        // A pasta da build nao existe: a latest\ falha, mas o zip ja esta no
+        // destino e e ele que importa. A falha vira aviso no _STATUS.txt.
+        var (publisher, context, artifact) = await SetupAsync();
+
+        var result = await publisher.PublishAsync(artifact, context, default);
+
+        Assert.True(result.Success);
+        Assert.True(File.Exists(Path.Combine(_destination, artifact.Name)));
+        Assert.Contains(context.Warnings, w => w.Contains(@"latest\"));
+    }
+
+    [Fact]
     public async Task Destino_indisponivel_nao_descarta_o_artefato_do_staging()
     {
         var (publisher, context, artifact) = await SetupAsync();
@@ -109,6 +140,10 @@ public class FolderPublisherTests : IDisposable
             ArtifactSha256 = await PackageStep.ComputeSha256Async(zipPath, default),
         };
 
-        return (new FolderPublisher(NullLogger<FolderPublisher>.Instance), context, new FileInfo(zipPath));
+        var publisher = new FolderPublisher(
+            new LatestFolderWriter(NullLogger<LatestFolderWriter>.Instance),
+            NullLogger<FolderPublisher>.Instance);
+
+        return (publisher, context, new FileInfo(zipPath));
     }
 }

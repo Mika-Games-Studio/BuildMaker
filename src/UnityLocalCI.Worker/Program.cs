@@ -57,6 +57,7 @@ services.AddSingleton<IBuildScheduler>(sp => sp.GetRequiredService<BuildSchedule
 // Pipeline: escopo proprio por build, para que timeout ou travamento de um
 // projeto nao alcance os demais.
 services.AddScoped<IBuildLogWriter, BuildLogWriter>();
+services.AddSingleton<ILatestFolderWriter, LatestFolderWriter>();
 services.AddScoped<IArtifactPublisher, FolderPublisher>();
 services.AddScoped<INotifier, LogNotifier>();
 services.AddScoped<INotifier, StatusFileNotifier>();

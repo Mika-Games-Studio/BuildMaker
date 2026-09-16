@@ -14,9 +14,14 @@ public sealed class FolderPublisher : IArtifactPublisher
 {
     private const string PartialSuffix = ".part";
 
+    private readonly ILatestFolderWriter _latest;
     private readonly ILogger<FolderPublisher> _logger;
 
-    public FolderPublisher(ILogger<FolderPublisher> logger) => _logger = logger;
+    public FolderPublisher(ILatestFolderWriter latest, ILogger<FolderPublisher> logger)
+    {
+        _latest = latest;
+        _logger = logger;
+    }
 
     public string Name => "Pasta";
 
@@ -59,6 +64,9 @@ public sealed class FolderPublisher : IArtifactPublisher
             File.Move(partialPath, finalPath);
 
             _logger.LogInformation("Artefato publicado em {Path}.", finalPath);
+
+            await UpdateLatestAsync(destinationFolder, context, ct).ConfigureAwait(false);
+
             return PublishResult.Published(finalPath);
         }
         catch (UnauthorizedAccessException)
@@ -71,6 +79,27 @@ public sealed class FolderPublisher : IArtifactPublisher
             SafeDelete(partialPath);
             return PublishResult.Pending($"falha ao copiar para {destinationFolder}: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// A latest\ vem depois do zip e nao pode derrubar a publicacao: o artefato
+    /// ja esta no destino e e ele que importa. Uma latest\ desatualizada faz
+    /// alguem testar a build errada, entao a falha vira aviso no _STATUS.txt.
+    /// </summary>
+    private async Task UpdateLatestAsync(string destinationFolder, BuildContext context, CancellationToken ct)
+    {
+        if (!context.Project.Publishing.MaintainLatestFolder) return;
+
+        var error = await _latest
+            .UpdateAsync(destinationFolder, context.BuildOutputPath, ct)
+            .ConfigureAwait(false);
+
+        if (error is null) return;
+
+        context.Warnings.Add(
+            $"A pasta latest\\ nao foi atualizada ({error}); ela ainda contem a build anterior.");
+
+        _logger.LogWarning("Falha ao atualizar a pasta latest: {Error}", error);
     }
 
     private static async Task CopyAsync(string source, string destination, CancellationToken ct)
