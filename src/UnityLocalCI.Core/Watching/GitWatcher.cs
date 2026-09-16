@@ -28,6 +28,9 @@ public sealed class GitWatcher : BackgroundService
 
     private DateTimeOffset? _debounceStartedAt;
 
+    /// <summary>Sinal do hook post-merge: antecipa a proxima verificacao.</summary>
+    private readonly SemaphoreSlim _poke = new(0, 1);
+
     public GitWatcher(
         ResolvedProject project,
         TimeSpan startupOffset,
@@ -80,8 +83,22 @@ public sealed class GitWatcher : BackgroundService
                 _logger.LogError(ex, "[{Project}] erro inesperado no watcher.", _project.Name);
             }
 
-            await _clock.Delay(interval, stoppingToken).ConfigureAwait(false);
+            // O que vier primeiro: o intervalo de polling ou um sinal do hook.
+            // O hook e so otimizacao de latencia e pode falhar sem consequencia,
+            // porque o polling continua sendo a fonte da verdade.
+            await Task.WhenAny(
+                _clock.Delay(interval, stoppingToken),
+                _poke.WaitAsync(stoppingToken)).ConfigureAwait(false);
         }
+    }
+
+    /// <summary>
+    /// Antecipa a proxima verificacao. Nao enfileira nada: quem decide continua
+    /// sendo o laco de polling, com o debounce e o ultimo sha que ele conhece.
+    /// </summary>
+    public void PokeNow()
+    {
+        try { _poke.Release(); } catch (SemaphoreFullException) { /* ja sinalizado */ }
     }
 
     internal async Task PollOnceAsync(CancellationToken ct)

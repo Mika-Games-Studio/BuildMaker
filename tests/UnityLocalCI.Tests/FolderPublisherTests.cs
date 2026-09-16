@@ -141,6 +141,7 @@ public class FolderPublisherTests : IDisposable
         };
 
         var publisher = new FolderPublisher(
+            new ArtifactCopier(NullLogger<ArtifactCopier>.Instance),
             new LatestFolderWriter(NullLogger<LatestFolderWriter>.Instance),
             NullLogger<FolderPublisher>.Instance);
 

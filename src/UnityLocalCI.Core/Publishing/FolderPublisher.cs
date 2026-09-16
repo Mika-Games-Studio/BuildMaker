@@ -12,13 +12,14 @@ namespace UnityLocalCI.Core.Publishing;
 /// </summary>
 public sealed class FolderPublisher : IArtifactPublisher
 {
-    private const string PartialSuffix = ".part";
-
+    private readonly ArtifactCopier _copier;
     private readonly ILatestFolderWriter _latest;
     private readonly ILogger<FolderPublisher> _logger;
 
-    public FolderPublisher(ILatestFolderWriter latest, ILogger<FolderPublisher> logger)
+    public FolderPublisher(
+        ArtifactCopier copier, ILatestFolderWriter latest, ILogger<FolderPublisher> logger)
     {
+        _copier = copier;
         _latest = latest;
         _logger = logger;
     }
@@ -28,57 +29,18 @@ public sealed class FolderPublisher : IArtifactPublisher
     public async Task<PublishResult> PublishAsync(FileInfo artifact, BuildContext context, CancellationToken ct)
     {
         var destinationFolder = context.Project.Publishing.ArtifactFolder;
-        var finalPath = Path.Combine(destinationFolder, artifact.Name);
-        var partialPath = finalPath + PartialSuffix;
 
-        try
-        {
-            Directory.CreateDirectory(destinationFolder);
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return PublishResult.Pending($"sem permissao de escrita em {destinationFolder}");
-        }
-        catch (IOException ex)
-        {
-            return PublishResult.Pending($"pasta de destino {destinationFolder} indisponivel: {ex.Message}");
-        }
+        var outcome = await _copier
+            .CopyAsync(artifact.FullName, destinationFolder, context.ArtifactSha256, ct)
+            .ConfigureAwait(false);
 
-        try
-        {
-            // Nome temporario ate o fim da copia: ninguem que estiver olhando a
-            // pasta pode pegar um zip pela metade com o nome final.
-            if (File.Exists(partialPath)) File.Delete(partialPath);
+        if (!outcome.Success) return PublishResult.Pending(outcome.Error!);
 
-            await CopyAsync(artifact.FullName, partialPath, ct).ConfigureAwait(false);
+        _logger.LogInformation("Artefato publicado em {Path}.", outcome.Location);
 
-            var copiedHash = await PackageStep.ComputeSha256Async(partialPath, ct).ConfigureAwait(false);
-            if (!string.Equals(copiedHash, context.ArtifactSha256, StringComparison.OrdinalIgnoreCase))
-            {
-                SafeDelete(partialPath);
-                return PublishResult.Pending(
-                    "o SHA-256 do arquivo copiado nao confere com o do staging; a copia foi descartada");
-            }
+        await UpdateLatestAsync(destinationFolder, context, ct).ConfigureAwait(false);
 
-            if (File.Exists(finalPath)) File.Delete(finalPath);
-            File.Move(partialPath, finalPath);
-
-            _logger.LogInformation("Artefato publicado em {Path}.", finalPath);
-
-            await UpdateLatestAsync(destinationFolder, context, ct).ConfigureAwait(false);
-
-            return PublishResult.Published(finalPath);
-        }
-        catch (UnauthorizedAccessException)
-        {
-            SafeDelete(partialPath);
-            return PublishResult.Pending($"sem permissao de escrita em {destinationFolder}");
-        }
-        catch (IOException ex)
-        {
-            SafeDelete(partialPath);
-            return PublishResult.Pending($"falha ao copiar para {destinationFolder}: {ex.Message}");
-        }
+        return PublishResult.Published(outcome.Location!);
     }
 
     /// <summary>
@@ -100,28 +62,5 @@ public sealed class FolderPublisher : IArtifactPublisher
             $"A pasta latest\\ nao foi atualizada ({error}); ela ainda contem a build anterior.");
 
         _logger.LogWarning("Falha ao atualizar a pasta latest: {Error}", error);
-    }
-
-    private static async Task CopyAsync(string source, string destination, CancellationToken ct)
-    {
-        await using var input = new FileStream(
-            source, FileMode.Open, FileAccess.Read, FileShare.Read, 1024 * 128, useAsync: true);
-        await using var output = new FileStream(
-            destination, FileMode.Create, FileAccess.Write, FileShare.None, 1024 * 128, useAsync: true);
-
-        await input.CopyToAsync(output, ct).ConfigureAwait(false);
-    }
-
-    private void SafeDelete(string path)
-    {
-        try
-        {
-            if (File.Exists(path)) File.Delete(path);
-        }
-        catch (IOException ex)
-        {
-            _logger.LogWarning(ex, "Nao foi possivel remover a copia parcial {Path}.", path);
-        }
-        catch (UnauthorizedAccessException) { /* destino ja inacessivel */ }
     }
 }

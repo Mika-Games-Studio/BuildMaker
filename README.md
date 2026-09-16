@@ -4,7 +4,7 @@ Serviço de integração contínua que roda inteiramente numa máquina Windows l
 
 Sem nuvem, sem servidor HTTP, sem API, sem painel web. A pasta de destino é a interface.
 
-**Estado atual: fases 1 e 2 concluídas.** Ver [O que já existe](#o-que-já-existe-e-o-que-falta) ao final.
+**Estado atual: as três fases concluídas.** Ver [O que já existe](#o-que-já-existe-e-o-que-falta) ao final.
 
 ---
 
@@ -66,9 +66,9 @@ Todos os placeholders estão listados na seção seguinte. Enquanto houver um `P
 dotnet run --project src/UnityLocalCI.Worker
 ```
 
-Por enquanto é uma aplicação de console. O registro como Windows Service é fase 3.
+Isso roda como aplicação de console, que é o modo de conferir a configuração. Para instalar como serviço, ver [Windows Service](#windows-service).
 
-> **Se o `.exe` reclamar que o .NET não foi encontrado:** o SDK está instalado no perfil do usuário (`%USERPROFILE%\.dotnet`) e o apphost só procura em `C:\Program Files\dotnet`. Rode por `dotnet UnityLocalCI.Worker.dll`, ou defina `DOTNET_ROOT`. Para o serviço da fase 3, instale o .NET para toda a máquina.
+> **Se o `.exe` reclamar que o .NET não foi encontrado:** o SDK está instalado no perfil do usuário (`%USERPROFILE%\.dotnet`) e o apphost só procura em `C:\Program Files\dotnet`. Rode por `dotnet UnityLocalCI.Worker.dll`, ou defina `DOTNET_ROOT`. Antes de registrar o Windows Service, instale o .NET para toda a máquina.
 
 ---
 
@@ -85,6 +85,7 @@ Tudo que precisa ser preenchido antes do primeiro uso real. Nada disso foi inven
 | `PREENCHER-VERSAO-DO-EDITOR` | `Defaults.Unity.EditorVersion` | Versão exata do editor, ex.: `6000.0.47f1`. Cada projeto pode sobrescrever a sua. |
 | `PREENCHER-PASTA-DE-DESTINO` | `Projects[].Publishing.ArtifactFolder` | Pasta onde o time pega o zip. |
 | `PREENCHER-DESTINO-RAIZ` | `Scheduler.GlobalStatusFile` | Raiz do compartilhamento, onde vai o `_STATUS-GERAL.txt`. |
+| `PREENCHER-NOME-DO-PROJETO` | `tools/post-merge.hook` | Nome do projeto no hook, se for usá-lo. |
 
 Valores que já vêm prontos e você provavelmente quer conferir: `Branch` (`HML`), `PatCredentialName` (`UnityLocalCI_AzureDevOpsPat`), e os caminhos locais em `C:\ci\` (workspace, staging, state, logs, triggers).
 
@@ -144,7 +145,7 @@ merge na HML ──► GitWatcher (1 por projeto, polling + debounce)
 
 **Sucesso é o exit code, e só.** A pasta de saída pode existir cheia de artefatos parciais mesmo quando o build falhou.
 
-**Falha ao copiar não descarta o artefato.** O zip nasce no staging local. Se o destino estiver fora do ar ou sem permissão, a build permanece bem-sucedida, o zip continua no staging e a cópia fica marcada como pendente. O reenvio automático é fase 3.
+**Falha ao copiar não descarta o artefato.** O zip nasce no staging local. Se o destino estiver fora do ar ou sem permissão, a build permanece bem-sucedida, o zip continua no staging e a cópia fica marcada como pendente. O reenvio é automático: na inicialização e a cada 10 minutos.
 
 ### Invocação do Unity: desvio consciente da especificação
 
@@ -186,7 +187,7 @@ UnityLocalCI.sln
 │       └── Notifications/        INotifier e LogNotifier
 ├── tests/UnityLocalCI.Tests/     52 testes xUnit
 ├── unity/                        Builder.cs e instrucoes de instalacao
-├── tools/                        buildar-tudo, mais scripts de instalação (fase 3)
+├── tools/                        buildar-tudo, install-service, set-secrets, post-merge
 └── config/
 ```
 
@@ -319,8 +320,91 @@ Três detalhes que a implementação garante:
 
 A retenção também roda quando um job está adiado por falta de disco. Sem isso ele esperaria para sempre: a poda só acontece ao fim de uma build, e nenhuma ia começar.
 
+---
+
+## Operação
+
+### Notificação no Teams
+
+Opcional. Sem `Notifications.TeamsWebhookCredentialName` configurado, o notificador não faz nada.
+
+A URL do webhook é um segredo como qualquer outro — quem a tem pode postar no canal —, então ela vive no Credential Manager e a configuração guarda só o nome:
+
+```bash
+cmdkey /generic:UnityLocalCI_TeamsWebhook /user:unitylocalci /pass:https://SEU-WEBHOOK
+```
+
+```jsonc
+"Notifications": { "TeamsWebhookCredentialName": "UnityLocalCI_TeamsWebhook" }
+```
+
+O payload é um **Adaptive Card**, que é o formato esperado pelos webhooks de fluxo do Power Automate. Se o seu canal ainda usa um connector antigo do Office 365, a URL espera o formato `MessageCard`: troque o corpo de `TeamsNotifier.BuildPayload`, que é o único lugar que conhece o formato.
+
+Falha ao notificar nunca muda o resultado de uma build que já terminou — vira aviso no log.
+
+### Sinal em loopback e hook `post-merge`
+
+O serviço ouve em `http://127.0.0.1:<HookSignalPort>/`, **só em loopback**. Não é um painel e não é uma API de artefatos: o prefixo é `127.0.0.1` (não `localhost`, não `+`), então nada fora da máquina alcança a porta, não há hostname para configurar e não há firewall para liberar.
+
+| Rota | Efeito |
+|---|---|
+| `POST /` ou `GET /` | Antecipa a verificação. Corpo com o nome do projeto, ou vazio para todos. |
+| `POST /api/builds/{id}/republish` | Reenvia o artefato de uma build com cópia pendente. |
+
+O hook **nunca enfileira direto**: ele só antecipa a verificação do watcher, que continua sendo quem conhece o debounce e o último sha. É otimização de latência e pode falhar sem consequência — o polling continua sendo a fonte da verdade, e nenhum merge se perde.
+
+Instalação: copie [`tools/post-merge.hook`](tools/post-merge.hook) para `.git/hooks/post-merge` no clone de quem faz merge, ajuste `PROJETO` e `SERVIDOR`, e marque como executável.
+
+```bash
+curl --data "Crash" http://127.0.0.1:8081/
+```
+
+> **Um POST sem corpo recebe 411.** O `http.sys` do Windows rejeita `POST` sem `Content-Length` antes de a requisição chegar ao serviço — não dá para tratar isso de dentro do `HttpListener`. Por isso a rota de sinal também aceita `GET`, e o hook envia `--data`. A rota de reenvio continua só por `POST`, porque ela tem efeito.
+
+### Reenvio de artefato pendente
+
+Quando o compartilhamento está fora do ar, a build permanece bem-sucedida e o zip fica no staging marcado como `PendingCopy`. O reenvio acontece sozinho: na inicialização e a cada `PendingCopyRetryMinutes` (padrão 10). A máquina que caiu durante a noite reencontra o compartilhamento sem ninguém lembrar.
+
+Para forçar agora:
+
+```bash
+curl -X POST --data "" http://127.0.0.1:8081/api/builds/42/republish
+```
+
+O staging **nunca** é apagado pelo reenvio. Quem remove é a retenção, e só depois de a cópia estar confirmada.
+
+### Windows Service
+
+```bash
+dotnet publish src/UnityLocalCI.Worker -c Release -o publicado
+```
+
+```bash
+powershell -ExecutionPolicy Bypass -File tools\install-service.ps1
+```
+
+O script confere .NET, Git e Unity CLI, cria os diretórios de cada projeto **escrevendo de verdade em cada um** (permissão só se descobre tentando), avisa quais credenciais faltam, registra o serviço com reinício automático e o inicia.
+
+Para rodar sob uma conta de serviço:
+
+```bash
+powershell -ExecutionPolicy Bypass -File tools\install-service.ps1 -Conta "DOMINIO\svc-ci"
+```
+
+> **Duas armadilhas de conta de serviço.** O Credential Manager é **por usuário**: os segredos precisam ser gravados logado como a conta que executa o serviço, senão ele sobe e não encontra nada. E o .NET instalado no perfil de um usuário (`%USERPROFILE%\.dotnet`) não é visto por outra conta — instale-o para a máquina inteira, ou defina `DOTNET_ROOT` no ambiente do serviço. O `install-service.ps1` avisa sobre as duas.
+
 > Os demais campos de configuração da fase 2 (`MaintainLatestFolder`, `WriteStatusFiles`, `IncludeLauncher`, `Retention`, `ManualTriggerFile`, `GlobalStatusFile`) já existem e são validados, mas ainda não têm efeito.
 
-### Fase 3 — operação (não começou)
+### Fase 3 — operação (concluída)
 
-Teams por webhook, reenvio de artefato pendente, hook `post-merge`, `install-service.ps1`, `set-secrets.ps1`, registro como Windows Service.
+| Item | Estado |
+|---|---|
+| Notificador do Teams por webhook | **pronto** |
+| Reenvio de artefato com cópia pendente | **pronto** |
+| Hook `post-merge` e sinal em loopback | **pronto** |
+| `install-service.ps1` e `set-secrets.ps1` | **pronto** |
+| Registro como Windows Service | **pronto** |
+
+> **Desvio da especificação, e por quê.** A seção 5.4 diz que não há servidor HTTP, API nem porta exposta; a lista da fase 3 pede um `POST /api/builds/{id}/republish`. As duas coisas foram reconciliadas num ouvinte **só de loopback**, que é o mesmo previsto na seção 5.1 para o sinal do hook: uma porta em `127.0.0.1` não é exposta, não pede liberação de firewall e não é alcançável de fora da máquina. Não há painel, não há link para compartilhar e a pasta continua sendo a interface.
+>
+> O reenvio, além disso, **não depende** desse endpoint: ele acontece sozinho na inicialização e a cada 10 minutos. A rota existe para forçar agora, não para o mecanismo funcionar.
