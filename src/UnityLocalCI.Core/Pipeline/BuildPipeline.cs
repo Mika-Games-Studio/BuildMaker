@@ -4,6 +4,7 @@ using UnityLocalCI.Core.Abstractions;
 using UnityLocalCI.Core.Configuration;
 using UnityLocalCI.Core.Git;
 using UnityLocalCI.Core.Notifications;
+using UnityLocalCI.Core.Publishing;
 using UnityLocalCI.Core.Queue;
 using UnityLocalCI.Core.Secrets;
 using UnityLocalCI.Core.State;
@@ -23,7 +24,8 @@ public sealed class BuildPipeline : IBuildRunner
     private readonly IBuildStore _store;
     private readonly IBuildLogWriter _log;
     private readonly ICredentialStore _credentials;
-    private readonly INotifier _notifier;
+    private readonly IReadOnlyList<INotifier> _notifiers;
+    private readonly IGlobalStatusWriter _globalStatus;
     private readonly IClock _clock;
     private readonly CiOptions _options;
     private readonly ILogger<BuildPipeline> _logger;
@@ -36,7 +38,8 @@ public sealed class BuildPipeline : IBuildRunner
         IBuildStore store,
         IBuildLogWriter log,
         ICredentialStore credentials,
-        INotifier notifier,
+        IEnumerable<INotifier> notifiers,
+        IGlobalStatusWriter globalStatus,
         IClock clock,
         IOptions<CiOptions> options,
         ILogger<BuildPipeline> logger)
@@ -48,7 +51,8 @@ public sealed class BuildPipeline : IBuildRunner
         _store = store;
         _log = log;
         _credentials = credentials;
-        _notifier = notifier;
+        _notifiers = notifiers.ToList();
+        _globalStatus = globalStatus;
         _clock = clock;
         _options = options.Value;
         _logger = logger;
@@ -134,6 +138,11 @@ public sealed class BuildPipeline : IBuildRunner
             StartedAt = startedAt,
             LogPath = logPath,
         }, ct).ConfigureAwait(false);
+
+        // O _STATUS-GERAL.txt e reescrito tambem aqui, e nao so no fim: quem
+        // abre o arquivo durante uma build de 30 minutos precisa ver
+        // "construindo", nao o resultado da build anterior.
+        await _globalStatus.WriteAsync(ct).ConfigureAwait(false);
     }
 
     private async Task FinishAsync(
@@ -146,6 +155,11 @@ public sealed class BuildPipeline : IBuildRunner
     {
         var finishedAt = _clock.UtcNow;
         var duration = (int)(finishedAt - startedAt).TotalSeconds;
+
+        // O log e fechado antes dos notificadores porque um deles copia o arquivo
+        // para a pasta de destino, e a copia precisa incluir a linha de resultado.
+        _log.Write($"=== Resultado: {status} em {duration}s ===");
+        _log.Dispose();
 
         // Deliberadamente com CancellationToken.None: o registro do resultado
         // precisa acontecer mesmo quando a build foi interrompida.
@@ -168,11 +182,23 @@ public sealed class BuildPipeline : IBuildRunner
             };
 
             await _store.UpdateAsync(record, CancellationToken.None).ConfigureAwait(false);
-            await _notifier.NotifyAsync(record, context.Warnings, CancellationToken.None).ConfigureAwait(false);
-        }
 
-        _log.Write($"=== Resultado: {status} em {duration}s ===");
-        _log.Dispose();
+            foreach (var notifier in _notifiers)
+            {
+                try
+                {
+                    await notifier.NotifyAsync(record, context.Warnings, CancellationToken.None).ConfigureAwait(false);
+                }
+                catch (Exception exception)
+                {
+                    // Um notificador quebrado nunca pode mudar o resultado de uma
+                    // build que ja terminou, nem impedir os outros de rodarem.
+                    _logger.LogError(exception, "Notificador {Notifier} falhou.", notifier.GetType().Name);
+                }
+            }
+
+            await _globalStatus.WriteAsync(CancellationToken.None).ConfigureAwait(false);
+        }
 
         if (status == BuildStatus.Succeeded)
             _logger.LogInformation("Build {BuildId} concluida em {Duration}s.", job.BuildId, duration);

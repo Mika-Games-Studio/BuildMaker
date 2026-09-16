@@ -231,14 +231,43 @@ dotnet test
 |---|---|
 | `Builder.cs` em `unity/`, com instruções de instalação | **pronto** |
 | Contrato de log entre o `Builder.cs` e o pipeline | **pronto** |
-| `_STATUS.txt`, `_HISTORICO.txt` e `_STATUS-GERAL.txt` | a fazer |
+| `_STATUS.txt`, `_HISTORICO.txt` e `_STATUS-GERAL.txt` | **pronto** |
 | Pasta `latest\` trocada por rename de diretório | a fazer |
 | `rodar.bat` no zip e em `latest\` | a fazer |
-| Cópia do log da build para `_logs\` | a fazer |
+| Cópia do log da build para `_logs\` | **pronto** |
 | Gatilho manual por arquivo observado | a fazer |
 | Retenção por contagem | a fazer |
 
 O `Builder.cs` vem primeiro porque é ele que faz o Unity retornar código diferente de zero em build quebrada. Enquanto ele não estiver instalado no projeto Unity, o pipeline pode publicar lixo — ver [`unity/README.md`](unity/README.md).
+
+### A pasta como interface
+
+Sem painel web, a própria pasta comunica o estado. O que o time encontra hoje no destino de cada projeto:
+
+```
+\\build01\builds\crash\hml\
+├── _STATUS.txt        resultado da última build, com o erro resumido em caso de falha
+├── _HISTORICO.txt     últimas 20 builds que rodaram, uma linha cada
+└── _logs\
+    └── build-42.log   o log completo, ao lado do status que aponta para ele
+```
+
+E na raiz do compartilhamento, um arquivo consolidando todos os projetos, para não ser preciso abrir uma pasta por jogo:
+
+```
+CI LOCAL — 16/09/2026 15:27
+
+PROJETO  ESTADO       ÚLTIMA BUILD  COMMIT   ARQUIVO
+Crash    ok           16/09 15:27   a1b2c3d  Crash-HML-20260916-a1b2c3d.zip
+Mines    construindo  (iniciou 15:22)  9f8e7d6  —
+Rocket   FALHOU       15/09 18:02   4e5f6a7  ver _logs\build-39.log
+
+Fila: 0 aguardando  |  Em execução: 1 de 2
+```
+
+O `_STATUS-GERAL.txt` é reescrito quando qualquer build termina **e** quando uma entra em execução, para que quem o abrir durante uma build de 30 minutos veja `construindo`, e não o resultado da anterior. A escrita é serializada entre projetos: duas builds terminando juntas não podem produzir um arquivo que descreve um estado que nunca existiu.
+
+A linha `Jogar.....: abra latest\rodar.bat` só aparece no `_STATUS.txt` quando o arquivo existe de fato — ela entra junto com a pasta `latest\`.
 
 > Os demais campos de configuração da fase 2 (`MaintainLatestFolder`, `WriteStatusFiles`, `IncludeLauncher`, `Retention`, `ManualTriggerFile`, `GlobalStatusFile`) já existem e são validados, mas ainda não têm efeito.
 

@@ -59,6 +59,8 @@ services.AddSingleton<IBuildScheduler>(sp => sp.GetRequiredService<BuildSchedule
 services.AddScoped<IBuildLogWriter, BuildLogWriter>();
 services.AddScoped<IArtifactPublisher, FolderPublisher>();
 services.AddScoped<INotifier, LogNotifier>();
+services.AddScoped<INotifier, StatusFileNotifier>();
+services.AddSingleton<IGlobalStatusWriter, GlobalStatusWriter>();
 services.AddScoped<SyncStep>();
 services.AddScoped<UnityBuildStep>();
 services.AddScoped<PackageStep>();
