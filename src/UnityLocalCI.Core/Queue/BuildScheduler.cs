@@ -5,6 +5,7 @@ using Microsoft.Extensions.Options;
 using UnityLocalCI.Core.Abstractions;
 using UnityLocalCI.Core.Configuration;
 using UnityLocalCI.Core.Git;
+using UnityLocalCI.Core.Publishing;
 using UnityLocalCI.Core.State;
 
 namespace UnityLocalCI.Core.Queue;
@@ -21,6 +22,7 @@ public sealed class BuildScheduler : BackgroundService, IBuildScheduler
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IBuildStore _store;
     private readonly IResourceGuard _resourceGuard;
+    private readonly IRetentionService _retention;
     private readonly IClock _clock;
     private readonly ILogger<BuildScheduler> _logger;
     private readonly SemaphoreSlim _globalSlots;
@@ -33,6 +35,7 @@ public sealed class BuildScheduler : BackgroundService, IBuildScheduler
         IServiceScopeFactory scopeFactory,
         IBuildStore store,
         IResourceGuard resourceGuard,
+        IRetentionService retention,
         ISystemResources resources,
         IClock clock,
         IOptions<CiOptions> options,
@@ -41,6 +44,7 @@ public sealed class BuildScheduler : BackgroundService, IBuildScheduler
         _scopeFactory = scopeFactory;
         _store = store;
         _resourceGuard = resourceGuard;
+        _retention = retention;
         _clock = clock;
         _logger = logger;
 
@@ -185,6 +189,20 @@ public sealed class BuildScheduler : BackgroundService, IBuildScheduler
                 if (lastReason is not null)
                     _logger.LogInformation("[{Project}] recurso liberado; build vai iniciar.", queue.ProjectName);
                 return;
+            }
+
+            // Sem isto, um job adiado por falta de disco esperaria para sempre:
+            // a retencao so roda ao fim de uma build, e nenhuma vai comecar.
+            if (lastReason is null)
+            {
+                try
+                {
+                    await _retention.ApplyAsync(project, ct).ConfigureAwait(false);
+                }
+                catch (Exception exception)
+                {
+                    _logger.LogError(exception, "[{Project}] retencao falhou ao tentar liberar espaco.", project.Name);
+                }
             }
 
             if (check.Reason != lastReason)

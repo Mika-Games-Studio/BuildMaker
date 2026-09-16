@@ -11,14 +11,21 @@ namespace UnityLocalCI.Core.Unity;
 /// </summary>
 public static partial class UnityLogParser
 {
-    private const int MaxCompilationErrors = 20;
+    private const int MaxCollected = 20;
     private const int MaxSummaryLines = 10;
 
-    /// <summary>Prefixo com que o Builder.cs marca avisos destinados ao _STATUS.txt.</summary>
-    public const string HighlightedWarningPrefix = "[UnityLocalCI]";
+    /// <summary>Prefixo com que o Builder.cs marca as linhas destinadas ao pipeline.</summary>
+    public const string Marker = "[UnityLocalCI]";
+
+    /// <summary>Erro ja curado pelo Builder.cs. Tem prioridade no resumo.</summary>
+    public const string MarkedErrorPrefix = Marker + " ERRO:";
+
+    /// <summary>Aviso destacado pelo Builder.cs, como a compressao Brotli sem fallback.</summary>
+    public const string MarkedWarningPrefix = Marker + " AVISO:";
 
     public static UnityLogSummary Parse(IEnumerable<string> lines)
     {
+        var markedErrors = new List<string>();
         var compilationErrors = new List<string>();
         var warnings = new List<string>();
         var generalErrors = new List<string>();
@@ -28,42 +35,61 @@ public static partial class UnityLogParser
             var line = raw.TrimEnd();
             if (line.Length == 0) continue;
 
-            if (CompilationErrorPattern().IsMatch(line))
+            // Os marcadores vem antes dos padroes genericos: o Builder ja decidiu
+            // se a linha e erro ou aviso, e adivinhar de novo so erraria.
+            if (line.Contains(MarkedErrorPrefix, StringComparison.Ordinal))
             {
-                if (!compilationErrors.Contains(line) && compilationErrors.Count < MaxCompilationErrors)
-                    compilationErrors.Add(line);
+                Collect(markedErrors, line);
                 continue;
             }
 
-            // Avisos que o Builder.cs marca para o pipeline propagar, como a
-            // combinacao Brotli sem decompressionFallback.
-            if (line.Contains(HighlightedWarningPrefix, StringComparison.Ordinal))
+            if (line.Contains(MarkedWarningPrefix, StringComparison.Ordinal))
             {
-                if (!warnings.Contains(line)) warnings.Add(line);
+                Collect(warnings, line);
+                continue;
+            }
+
+            // Demais linhas marcadas sao informativas: nao sao erro nem aviso.
+            if (line.Contains(Marker, StringComparison.Ordinal)) continue;
+
+            if (CompilationErrorPattern().IsMatch(line))
+            {
+                Collect(compilationErrors, line);
                 continue;
             }
 
             if (CompilationWarningPattern().IsMatch(line))
             {
-                if (!warnings.Contains(line) && warnings.Count < MaxCompilationErrors)
-                    warnings.Add(line);
+                Collect(warnings, line);
                 continue;
             }
 
-            if (GeneralErrorPattern().IsMatch(line) && generalErrors.Count < MaxCompilationErrors)
-                generalErrors.Add(line);
+            if (GeneralErrorPattern().IsMatch(line))
+                Collect(generalErrors, line);
         }
 
-        var summarySource = compilationErrors.Count > 0 ? compilationErrors : generalErrors;
+        // Prioridade do resumo: o que o Builder curou, depois o compilador,
+        // depois qualquer erro solto que tenha sobrado.
+        var summarySource =
+            markedErrors.Count > 0 ? markedErrors :
+            compilationErrors.Count > 0 ? compilationErrors :
+            generalErrors;
+
         var summary = summarySource.Count == 0
             ? null
             : string.Join(Environment.NewLine, summarySource.Take(MaxSummaryLines));
 
-        return new UnityLogSummary(compilationErrors, warnings, generalErrors, summary);
+        return new UnityLogSummary(markedErrors, compilationErrors, warnings, generalErrors, summary);
     }
 
     public static UnityLogSummary ParseText(string text)
         => Parse(text.Split('\n', StringSplitOptions.None));
+
+    private static void Collect(List<string> target, string line)
+    {
+        if (target.Count >= MaxCollected || target.Contains(line)) return;
+        target.Add(line);
+    }
 
     // "Assets/Scripts/Player.cs(12,9): error CS0103: ..."
     [GeneratedRegex(@"^.+\(\d+,\d+\):\s*error\s+\w+\d*:", RegexOptions.IgnoreCase)]
@@ -78,7 +104,13 @@ public static partial class UnityLogParser
 }
 
 public sealed record UnityLogSummary(
+    IReadOnlyList<string> MarkedErrors,
     IReadOnlyList<string> CompilationErrors,
     IReadOnlyList<string> Warnings,
     IReadOnlyList<string> GeneralErrors,
-    string? Summary);
+    string? Summary)
+{
+    /// <summary>Todos os erros, do mais curado ao mais bruto.</summary>
+    public IReadOnlyList<string> AllErrors =>
+        MarkedErrors.Concat(CompilationErrors).Concat(GeneralErrors).ToList();
+}

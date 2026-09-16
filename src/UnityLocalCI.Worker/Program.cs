@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Hosting.WindowsServices;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using UnityLocalCI.Core.Abstractions;
@@ -13,10 +14,15 @@ using UnityLocalCI.Core.Queue;
 using UnityLocalCI.Core.Secrets;
 using UnityLocalCI.Core.State;
 using UnityLocalCI.Core.Unity;
+using System.Net.Http;
 using UnityLocalCI.Core.Watching;
 using UnityLocalCI.Worker;
 
 var builder = Host.CreateApplicationBuilder(args);
+
+// Quando registrado com sc.exe, o host fala o protocolo de servico do Windows;
+// rodando pelo console, esta chamada nao faz diferenca nenhuma.
+builder.Services.AddWindowsService(options => options.ServiceName = "UnityLocalCI");
 
 builder.Configuration
     .SetBasePath(AppContext.BaseDirectory)
@@ -57,8 +63,18 @@ services.AddSingleton<IBuildScheduler>(sp => sp.GetRequiredService<BuildSchedule
 // Pipeline: escopo proprio por build, para que timeout ou travamento de um
 // projeto nao alcance os demais.
 services.AddScoped<IBuildLogWriter, BuildLogWriter>();
+services.AddSingleton<ILatestFolderWriter, LatestFolderWriter>();
 services.AddScoped<IArtifactPublisher, FolderPublisher>();
 services.AddScoped<INotifier, LogNotifier>();
+services.AddScoped<INotifier, StatusFileNotifier>();
+services.AddSingleton<IGlobalStatusWriter, GlobalStatusWriter>();
+services.AddSingleton<IRetentionService, RetentionService>();
+services.AddSingleton<BuildTriggerService>();
+services.AddSingleton<GitWatcherRegistry>();
+services.AddSingleton<ArtifactCopier>();
+services.AddSingleton<IPendingCopyService, PendingCopyService>();
+services.AddSingleton(new HttpClient { Timeout = TimeSpan.FromSeconds(15) });
+services.AddScoped<INotifier, TeamsNotifier>();
 services.AddScoped<SyncStep>();
 services.AddScoped<UnityBuildStep>();
 services.AddScoped<PackageStep>();
@@ -81,16 +97,31 @@ for (var index = 0; index < enabledProjects.Count; index++)
     var project = enabledProjects[index];
     var offset = TimeSpan.FromSeconds(index * 7);
 
-    services.AddSingleton<IHostedService>(sp => new GitWatcher(
+    services.AddSingleton<IHostedService>(sp =>
+    {
+        var watcher = new GitWatcher(
+            project,
+            offset,
+            sp.GetRequiredService<IGitClient>(),
+            sp.GetRequiredService<IBuildStore>(),
+            sp.GetRequiredService<BuildTriggerService>(),
+            sp.GetRequiredService<IClock>(),
+            sp.GetRequiredService<ILogger<GitWatcher>>());
+
+        // O registro e o que permite ao sinal do hook cutucar o projeto certo.
+        sp.GetRequiredService<GitWatcherRegistry>().Register(project.Name, watcher);
+        return watcher;
+    });
+
+    services.AddSingleton<IHostedService>(sp => new ManualTriggerWatcher(
         project,
-        offset,
-        sp.GetRequiredService<IGitClient>(),
-        sp.GetRequiredService<IBuildScheduler>(),
-        sp.GetRequiredService<IBuildStore>(),
-        sp.GetRequiredService<ICredentialStore>(),
+        sp.GetRequiredService<BuildTriggerService>(),
         sp.GetRequiredService<IClock>(),
-        sp.GetRequiredService<ILogger<GitWatcher>>()));
+        sp.GetRequiredService<ILogger<ManualTriggerWatcher>>()));
 }
+
+services.AddHostedService<SignalListener>();
+services.AddHostedService<PendingCopyRetryWorker>();
 
 var host = builder.Build();
 

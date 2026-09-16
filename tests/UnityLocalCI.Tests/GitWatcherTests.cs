@@ -19,13 +19,15 @@ public class GitWatcherTests
         var store = new InMemoryBuildStore();
         var clock = new FakeClock();
 
+        var trigger = new BuildTriggerService(
+            git, scheduler, store, new FakeCredentialStore(), NullLogger<BuildTriggerService>.Instance);
+
         var watcher = new GitWatcher(
             project ?? TestProjects.Create(debounceSeconds: DebounceSeconds),
             TimeSpan.Zero,
             git,
-            scheduler,
             store,
-            new FakeCredentialStore(),
+            trigger,
             clock,
             NullLogger<GitWatcher>.Instance);
 

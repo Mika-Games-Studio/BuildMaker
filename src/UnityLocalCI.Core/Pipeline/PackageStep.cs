@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using UnityLocalCI.Core.Abstractions;
+using UnityLocalCI.Core.Publishing;
 
 namespace UnityLocalCI.Core.Pipeline;
 
@@ -29,6 +30,14 @@ public sealed class PackageStep : IBuildStep
         if (validation is not null) return StepResult.Fail(validation);
 
         await WriteManifestAsync(context, ct).ConfigureAwait(false);
+
+        // O launcher entra antes de zipar, entao a mesma escrita serve ao zip e a
+        // pasta latest\, que e copiada desta mesma saida.
+        if (context.Project.Packaging.IncludeLauncher)
+        {
+            await LauncherScript.WriteAsync(context.BuildOutputPath, ct).ConfigureAwait(false);
+            _logger.LogInformation("Launcher {Launcher} incluido na build.", LauncherScript.LauncherFileName);
+        }
 
         var staging = context.Project.Publishing.StagingFolder;
         Directory.CreateDirectory(staging);

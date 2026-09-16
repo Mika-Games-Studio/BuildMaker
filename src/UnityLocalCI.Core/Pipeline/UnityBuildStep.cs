@@ -76,6 +76,6 @@ public sealed class UnityBuildStep : IBuildStep
     /// </summary>
     private static IEnumerable<string> ExtractHighlightedWarnings(UnityBuildResult result)
         => result.Warnings
-            .Where(w => w.Contains("[UnityLocalCI]", StringComparison.Ordinal))
+            .Where(w => w.Contains(UnityLogParser.Marker, StringComparison.Ordinal))
             .Distinct();
 }

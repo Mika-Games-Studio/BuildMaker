@@ -1,0 +1,29 @@
+#!/bin/sh
+#
+# Hook post-merge do UnityLocalCI.
+#
+# Copie para .git/hooks/post-merge no clone de quem faz merge na maquina de
+# desenvolvimento, e marque como executavel.
+#
+# Este hook e SO otimizacao de latencia: ele antecipa a verificacao do servico
+# em vez de esperar o proximo ciclo de polling. Pode falhar sem consequencia
+# nenhuma, porque o polling continua sendo a fonte da verdade e nenhum merge se
+# perde por causa disso. Por isso ele nunca falha o merge e nunca espera.
+#
+# Ajuste as duas variaveis abaixo.
+
+PROJETO="PREENCHER-NOME-DO-PROJETO"
+SERVIDOR="http://127.0.0.1:8081/"
+BRANCH_OBSERVADA="HML"
+
+branch_atual="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
+[ "$branch_atual" = "$BRANCH_OBSERVADA" ] || exit 0
+
+# --max-time: um servico fora do ar nao pode segurar o merge de ninguem.
+curl --silent --show-error --max-time 3 \
+     --data "$PROJETO" \
+     "$SERVIDOR" >/dev/null 2>&1 \
+  && echo "UnityLocalCI avisado: $PROJETO" \
+  || echo "UnityLocalCI nao respondeu; a build sai no proximo ciclo de polling."
+
+exit 0
