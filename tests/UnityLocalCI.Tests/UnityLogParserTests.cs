@@ -71,13 +71,61 @@ public class UnityLogParserTests
     {
         var summary = UnityLogParser.ParseText($"""
             Alguma linha qualquer
-            {UnityLogParser.HighlightedWarningPrefix} compressao Brotli sem decompressionFallback
+            {UnityLogParser.MarkedWarningPrefix} compressao Brotli sem decompressionFallback
             Outra linha
             """);
 
         var warning = Assert.Single(summary.Warnings);
         Assert.Contains("Brotli", warning);
-        Assert.Empty(summary.CompilationErrors);
+        Assert.Empty(summary.AllErrors);
+        Assert.Null(summary.Summary);
+    }
+
+    [Fact]
+    public void Erro_marcado_pelo_builder_nao_e_confundido_com_aviso()
+    {
+        // O Builder marca as duas coisas com o mesmo prefixo base; se o parser
+        // olhasse so para "[UnityLocalCI]", todo erro dele viraria aviso e a
+        // build falharia com o resumo vazio.
+        var summary = UnityLogParser.ParseText($"""
+            {UnityLogParser.MarkedErrorPrefix} nenhuma cena habilitada em Build Settings.
+            {UnityLogParser.MarkedWarningPrefix} compressao Brotli sem decompressionFallback
+            """);
+
+        var error = Assert.Single(summary.MarkedErrors);
+        Assert.Contains("nenhuma cena", error);
+        Assert.Single(summary.Warnings);
+        Assert.Contains("nenhuma cena", summary.Summary!);
+    }
+
+    [Fact]
+    public void Erro_curado_pelo_builder_tem_prioridade_sobre_o_resto()
+    {
+        var summary = UnityLogParser.ParseText($"""
+            Assets\A.cs(1,1): error CS1002: ; expected
+            BuildFailedException: Build failed with 1 error
+            {UnityLogParser.MarkedErrorPrefix} build terminou como Failed apos 12s com 1 erro(s).
+            """);
+
+        // Os tres foram capturados, mas o resumo abre pelo que o Builder curou.
+        Assert.Single(summary.MarkedErrors);
+        Assert.Single(summary.CompilationErrors);
+        Assert.Single(summary.GeneralErrors);
+        Assert.StartsWith(UnityLogParser.MarkedErrorPrefix, summary.Summary);
+        Assert.Equal(3, summary.AllErrors.Count);
+    }
+
+    [Fact]
+    public void Linha_marcada_informativa_nao_vira_erro_nem_aviso()
+    {
+        var summary = UnityLogParser.ParseText($"""
+            {UnityLogParser.Marker} build 42 | commit a1b2c3d | branch HML | alvo WebGL
+            {UnityLogParser.Marker} 3 cena(s) habilitada(s): Assets/Main.unity
+            """);
+
+        Assert.Empty(summary.AllErrors);
+        Assert.Empty(summary.Warnings);
+        Assert.Null(summary.Summary);
     }
 
     [Fact]

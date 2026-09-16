@@ -4,7 +4,7 @@ Serviço de integração contínua que roda inteiramente numa máquina Windows l
 
 Sem nuvem, sem servidor HTTP, sem API, sem painel web. A pasta de destino é a interface.
 
-**Estado atual: fase 1 (núcleo) concluída.** Ver [O que já existe](#o-que-já-existe-e-o-que-falta) ao final.
+**Estado atual: fase 1 concluída, fase 2 em andamento.** Ver [O que já existe](#o-que-já-existe-e-o-que-falta) ao final.
 
 ---
 
@@ -160,7 +160,7 @@ unity --non-interactive --no-banner build <workspace>
       --args "-ciBuildNumber 42 -ciCommitSha <sha> -ciBranch HML -ciOutputPath <saída>"
 ```
 
-O caminho de saída vai pelos dois nomes (`-buildOutput` via `--output-path` e `-ciOutputPath` via `--args`), então o `Builder.cs` da fase 2 pode ler qualquer um.
+O caminho de saída vai pelos dois nomes (`-buildOutput` via `--output-path` e `-ciOutputPath` via `--args`), então o [`Builder.cs`](unity/Builder.cs) lê qualquer um dos dois.
 
 Também não usamos `--format json`: o log é transmitido em tempo real para `logs/build-{id}.log` enquanto roda, o que não conviveria com uma saída JSON única no fim. Se o build travar e for morto pelo timeout, o que já saiu está gravado.
 
@@ -185,7 +185,7 @@ UnityLocalCI.sln
 │       ├── Publishing/           IArtifactPublisher e FolderPublisher
 │       └── Notifications/        INotifier e LogNotifier
 ├── tests/UnityLocalCI.Tests/     52 testes xUnit
-├── unity/                        Builder.cs (fase 2)
+├── unity/                        Builder.cs e instrucoes de instalacao
 ├── tools/                        scripts de instalação (fase 3)
 └── config/
 ```
@@ -225,11 +225,22 @@ dotnet test
 - Segredos no Windows Credential Manager
 - Execução como aplicação de console
 
-### Fase 2 — usabilidade (não começou)
+### Fase 2 — usabilidade (em andamento)
 
-Pasta `latest\` trocada por rename, `_STATUS.txt`, `_HISTORICO.txt`, `_STATUS-GERAL.txt`, `rodar.bat`, cópia do log para `_logs\`, gatilho manual por arquivo observado, retenção por contagem, `Builder.cs`.
+| Item | Estado |
+|---|---|
+| `Builder.cs` em `unity/`, com instruções de instalação | **pronto** |
+| Contrato de log entre o `Builder.cs` e o pipeline | **pronto** |
+| `_STATUS.txt`, `_HISTORICO.txt` e `_STATUS-GERAL.txt` | a fazer |
+| Pasta `latest\` trocada por rename de diretório | a fazer |
+| `rodar.bat` no zip e em `latest\` | a fazer |
+| Cópia do log da build para `_logs\` | a fazer |
+| Gatilho manual por arquivo observado | a fazer |
+| Retenção por contagem | a fazer |
 
-> Os campos de configuração da fase 2 (`MaintainLatestFolder`, `WriteStatusFiles`, `IncludeLauncher`, `Retention`, `ManualTriggerFile`, `GlobalStatusFile`) já existem e são validados, mas ainda não têm efeito.
+O `Builder.cs` vem primeiro porque é ele que faz o Unity retornar código diferente de zero em build quebrada. Enquanto ele não estiver instalado no projeto Unity, o pipeline pode publicar lixo — ver [`unity/README.md`](unity/README.md).
+
+> Os demais campos de configuração da fase 2 (`MaintainLatestFolder`, `WriteStatusFiles`, `IncludeLauncher`, `Retention`, `ManualTriggerFile`, `GlobalStatusFile`) já existem e são validados, mas ainda não têm efeito.
 
 ### Fase 3 — operação (não começou)
 
