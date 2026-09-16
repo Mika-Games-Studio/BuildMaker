@@ -26,6 +26,7 @@ public sealed class BuildPipeline : IBuildRunner
     private readonly ICredentialStore _credentials;
     private readonly IReadOnlyList<INotifier> _notifiers;
     private readonly IGlobalStatusWriter _globalStatus;
+    private readonly IRetentionService _retention;
     private readonly IClock _clock;
     private readonly CiOptions _options;
     private readonly ILogger<BuildPipeline> _logger;
@@ -40,6 +41,7 @@ public sealed class BuildPipeline : IBuildRunner
         ICredentialStore credentials,
         IEnumerable<INotifier> notifiers,
         IGlobalStatusWriter globalStatus,
+        IRetentionService retention,
         IClock clock,
         IOptions<CiOptions> options,
         ILogger<BuildPipeline> logger)
@@ -53,6 +55,7 @@ public sealed class BuildPipeline : IBuildRunner
         _credentials = credentials;
         _notifiers = notifiers.ToList();
         _globalStatus = globalStatus;
+        _retention = retention;
         _clock = clock;
         _options = options.Value;
         _logger = logger;
@@ -198,6 +201,17 @@ public sealed class BuildPipeline : IBuildRunner
             }
 
             await _globalStatus.WriteAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+
+        try
+        {
+            // Retencao depois dos notificadores: o _HISTORICO.txt e reescrito
+            // antes da poda, e quem for podado ja aparece nele sem o zip.
+            await _retention.ApplyAsync(job.Project, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogError(exception, "Retencao falhou; nada foi removido.");
         }
 
         if (status == BuildStatus.Succeeded)

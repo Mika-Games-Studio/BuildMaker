@@ -20,9 +20,8 @@ public sealed class GitWatcher : BackgroundService
 {
     private readonly ResolvedProject _project;
     private readonly IGitClient _git;
-    private readonly IBuildScheduler _scheduler;
     private readonly IBuildStore _store;
-    private readonly ICredentialStore _credentials;
+    private readonly BuildTriggerService _trigger;
     private readonly IClock _clock;
     private readonly ILogger<GitWatcher> _logger;
     private readonly TimeSpan _startupOffset;
@@ -33,18 +32,16 @@ public sealed class GitWatcher : BackgroundService
         ResolvedProject project,
         TimeSpan startupOffset,
         IGitClient git,
-        IBuildScheduler scheduler,
         IBuildStore store,
-        ICredentialStore credentials,
+        BuildTriggerService trigger,
         IClock clock,
         ILogger<GitWatcher> logger)
     {
         _project = project;
         _startupOffset = startupOffset;
         _git = git;
-        _scheduler = scheduler;
         _store = store;
-        _credentials = credentials;
+        _trigger = trigger;
         _clock = clock;
         _logger = logger;
     }
@@ -130,40 +127,20 @@ public sealed class GitWatcher : BackgroundService
         await EnqueueAsync(context, sha, BuildTrigger.Poll, ct).ConfigureAwait(false);
     }
 
-    /// <summary>Enfileira o HEAD atual, ignorando o debounce. Usado pelo gatilho manual e pela recuperacao no boot.</summary>
-    public async Task<long?> EnqueueCurrentHeadAsync(BuildTrigger trigger, CancellationToken ct)
-    {
-        var context = BuildGitContext();
-        await _git.FetchAsync(context, ct).ConfigureAwait(false);
-        var sha = await _git.GetRemoteHeadShaAsync(context, ct).ConfigureAwait(false);
-        return await EnqueueAsync(context, sha, trigger, ct).ConfigureAwait(false);
-    }
+    /// <summary>Enfileira o HEAD atual, ignorando o debounce.</summary>
+    public Task<long?> EnqueueCurrentHeadAsync(BuildTrigger trigger, CancellationToken ct)
+        => _trigger.EnqueueHeadAsync(_project, trigger, ct);
 
     private async Task<long?> EnqueueAsync(GitContext context, string sha, BuildTrigger trigger, CancellationToken ct)
     {
-        var commit = await _git.GetCommitInfoAsync(context, sha, ct).ConfigureAwait(false);
-        var buildId = await _scheduler.EnqueueAsync(_project, commit, trigger, ct).ConfigureAwait(false);
-
-        if (buildId is not null)
-        {
-            // Marcado ja no enfileiramento: idempotencia e sobre nao construir o
-            // mesmo commit duas vezes, inclusive apos reinicio da maquina.
-            await _store.SetWatcherValueAsync(_project.Name, WatcherFields.LastBuiltSha, sha, ct).ConfigureAwait(false);
-            _debounceStartedAt = null;
-        }
-
+        // O last_built_sha e gravado dentro do servico, junto com o
+        // enfileiramento; aqui so fechamos a janela de debounce.
+        var buildId = await _trigger.EnqueueAsync(_project, context, sha, trigger, ct).ConfigureAwait(false);
+        if (buildId is not null) _debounceStartedAt = null;
         return buildId;
     }
 
-    internal GitContext BuildGitContext() => new()
-    {
-        WorkspacePath = _project.Repository.WorkspacePath,
-        RepositoryUrl = _project.Repository.Url,
-        Branch = _project.Repository.Branch,
-        PersonalAccessToken = string.IsNullOrWhiteSpace(_project.Repository.PatCredentialName)
-            ? null
-            : _credentials.Read(_project.Repository.PatCredentialName!),
-    };
+    internal GitContext BuildGitContext() => _trigger.CreateContext(_project);
 
     private static string Short(string sha) => sha.Length >= 7 ? sha[..7] : sha;
 }

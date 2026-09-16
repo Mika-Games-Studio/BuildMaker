@@ -62,6 +62,8 @@ services.AddScoped<IArtifactPublisher, FolderPublisher>();
 services.AddScoped<INotifier, LogNotifier>();
 services.AddScoped<INotifier, StatusFileNotifier>();
 services.AddSingleton<IGlobalStatusWriter, GlobalStatusWriter>();
+services.AddSingleton<IRetentionService, RetentionService>();
+services.AddSingleton<BuildTriggerService>();
 services.AddScoped<SyncStep>();
 services.AddScoped<UnityBuildStep>();
 services.AddScoped<PackageStep>();
@@ -88,11 +90,16 @@ for (var index = 0; index < enabledProjects.Count; index++)
         project,
         offset,
         sp.GetRequiredService<IGitClient>(),
-        sp.GetRequiredService<IBuildScheduler>(),
         sp.GetRequiredService<IBuildStore>(),
-        sp.GetRequiredService<ICredentialStore>(),
+        sp.GetRequiredService<BuildTriggerService>(),
         sp.GetRequiredService<IClock>(),
         sp.GetRequiredService<ILogger<GitWatcher>>()));
+
+    services.AddSingleton<IHostedService>(sp => new ManualTriggerWatcher(
+        project,
+        sp.GetRequiredService<BuildTriggerService>(),
+        sp.GetRequiredService<IClock>(),
+        sp.GetRequiredService<ILogger<ManualTriggerWatcher>>()));
 }
 
 var host = builder.Build();

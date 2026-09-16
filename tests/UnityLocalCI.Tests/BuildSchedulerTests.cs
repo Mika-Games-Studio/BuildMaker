@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using UnityLocalCI.Core.Configuration;
+using UnityLocalCI.Core.Publishing;
 using UnityLocalCI.Core.Git;
 using UnityLocalCI.Core.Queue;
 using UnityLocalCI.Core.State;
@@ -46,6 +47,7 @@ public class BuildSchedulerTests : IAsyncLifetime
             _provider.GetRequiredService<IServiceScopeFactory>(),
             _store,
             _guard,
+            new RetentionService(_store, NullLogger<RetentionService>.Instance),
             _resources,
             new FakeClock(),
             Options.Create(_options),
@@ -168,6 +170,7 @@ public class BuildSchedulerTests : IAsyncLifetime
         _provider.GetRequiredService<IServiceScopeFactory>(),
         _store,
         _guard,
+        new RetentionService(_store, NullLogger<RetentionService>.Instance),
         _resources,
         new FakeClock(),
         Options.Create(_options),

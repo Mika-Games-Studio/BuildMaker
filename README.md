@@ -4,7 +4,7 @@ Serviço de integração contínua que roda inteiramente numa máquina Windows l
 
 Sem nuvem, sem servidor HTTP, sem API, sem painel web. A pasta de destino é a interface.
 
-**Estado atual: fase 1 concluída, fase 2 em andamento.** Ver [O que já existe](#o-que-já-existe-e-o-que-falta) ao final.
+**Estado atual: fases 1 e 2 concluídas.** Ver [O que já existe](#o-que-já-existe-e-o-que-falta) ao final.
 
 ---
 
@@ -66,7 +66,7 @@ Todos os placeholders estão listados na seção seguinte. Enquanto houver um `P
 dotnet run --project src/UnityLocalCI.Worker
 ```
 
-Na fase 1 é uma aplicação de console. O registro como Windows Service é fase 3.
+Por enquanto é uma aplicação de console. O registro como Windows Service é fase 3.
 
 > **Se o `.exe` reclamar que o .NET não foi encontrado:** o SDK está instalado no perfil do usuário (`%USERPROFILE%\.dotnet`) e o apphost só procura em `C:\Program Files\dotnet`. Rode por `dotnet UnityLocalCI.Worker.dll`, ou defina `DOTNET_ROOT`. Para o serviço da fase 3, instale o .NET para toda a máquina.
 
@@ -80,11 +80,11 @@ Tudo que precisa ser preenchido antes do primeiro uso real. Nada disso foi inven
 |---|---|---|
 | `PREENCHER-NOME-DO-PROJETO` | `Projects[].Name` | Nome do projeto. Identifica a fila, o estado e aparece nos arquivos de status. |
 | `PREENCHER-NOME-DO-PROJETO` | `Projects[].Repository.WorkspacePath` | Última pasta do caminho do workspace. |
-| `PREENCHER-NOME-DO-PROJETO` | `Projects[].ManualTriggerFile` | Nome do arquivo de gatilho manual (usado a partir da fase 2). |
+| `PREENCHER-NOME-DO-PROJETO` | `Projects[].ManualTriggerFile` | Nome do arquivo de gatilho manual. |
 | `PREENCHER-URL-DO-REPOSITORIO` | `Projects[].Repository.Url` | URL do repositório no Azure DevOps. |
 | `PREENCHER-VERSAO-DO-EDITOR` | `Defaults.Unity.EditorVersion` | Versão exata do editor, ex.: `6000.0.47f1`. Cada projeto pode sobrescrever a sua. |
 | `PREENCHER-PASTA-DE-DESTINO` | `Projects[].Publishing.ArtifactFolder` | Pasta onde o time pega o zip. |
-| `PREENCHER-DESTINO-RAIZ` | `Scheduler.GlobalStatusFile` | Raiz do compartilhamento, onde vai o `_STATUS-GERAL.txt` (fase 2). |
+| `PREENCHER-DESTINO-RAIZ` | `Scheduler.GlobalStatusFile` | Raiz do compartilhamento, onde vai o `_STATUS-GERAL.txt`. |
 
 Valores que já vêm prontos e você provavelmente quer conferir: `Branch` (`HML`), `PatCredentialName` (`UnityLocalCI_AzureDevOpsPat`), e os caminhos locais em `C:\ci\` (workspace, staging, state, logs, triggers).
 
@@ -186,7 +186,7 @@ UnityLocalCI.sln
 │       └── Notifications/        INotifier e LogNotifier
 ├── tests/UnityLocalCI.Tests/     52 testes xUnit
 ├── unity/                        Builder.cs e instrucoes de instalacao
-├── tools/                        scripts de instalação (fase 3)
+├── tools/                        buildar-tudo, mais scripts de instalação (fase 3)
 └── config/
 ```
 
@@ -235,8 +235,10 @@ dotnet test
 | Pasta `latest\` trocada por rename de diretório | **pronto** |
 | `rodar.bat` no zip e em `latest\` | **pronto** |
 | Cópia do log da build para `_logs\` | **pronto** |
-| Gatilho manual por arquivo observado | a fazer |
-| Retenção por contagem | a fazer |
+| Gatilho manual por arquivo observado | **pronto** |
+| Retenção por contagem | **pronto** |
+
+**Fase 2 concluída.**
 
 O `Builder.cs` vem primeiro porque é ele que faz o Unity retornar código diferente de zero em build quebrada. Enquanto ele não estiver instalado no projeto Unity, o pipeline pode publicar lixo — ver [`unity/README.md`](unity/README.md).
 
@@ -280,6 +282,42 @@ Uma build WebGL não roda por `file://`: o navegador bloqueia `.wasm` e `.data` 
 Se nada existir, ele explica o motivo e aponta onde instalar, em vez de falhar em silêncio. Para usar outra porta: `rodar.bat 8090`.
 
 > **Desvio da especificação.** Ela previa, como terceira estratégia, um executável .NET de arquivo único embutido no zip. Trocamos por PowerShell porque ele já está em toda máquina Windows e não acrescenta dezenas de MB a **cada** artefato. O servidor em PowerShell ainda tem uma vantagem sobre os outros dois: ele envia `Content-Encoding` para arquivos `.br` e `.gz`, então roda até uma build compactada com Brotli — exatamente o caso que quebraria num `python -m http.server`.
+
+### Construir agora, sem esperar o merge
+
+Não há endpoint HTTP nem painel. Cada projeto observa o arquivo apontado por seu `ManualTriggerFile`: criar ou tocar esse arquivo enfileira uma build do HEAD atual, e o serviço o apaga ao consumir.
+
+Para um projeto, um atalho na área de trabalho apontando para um `.bat` de uma linha resolve:
+
+```bat
+type nul > C:\ci\triggers\crash.txt
+```
+
+Para todos de uma vez, [`tools/buildar-tudo.bat`](tools/buildar-tudo.bat) lê o `appsettings.json` e toca o gatilho de cada projeto habilitado:
+
+```bash
+tools\buildar-tudo.bat
+```
+
+Tocar N arquivos não dispara N builds simultâneas: cada fila recebe seu job e o scheduler distribui conforme as vagas livres. Para um subconjunto, passe os nomes:
+
+```bash
+tools\buildar-tudo.bat -Projeto Crash,Mines
+```
+
+O gatilho manual **ignora o debounce** de propósito — ele existe justamente para dizer "constrói agora" — e reconstrói o mesmo commit se você pedir, o que é o caso comum depois de uma falha.
+
+### Retenção
+
+Executada ao fim de cada build: mantém as `KeepLastBuilds` builds **bem-sucedidas** mais recentes e apaga, das demais, o zip no destino, o zip no staging, o log local e a cópia em `_logs\`.
+
+Três detalhes que a implementação garante:
+
+- **Contam-se as bem-sucedidas.** Uma sequência de falhas não empurra para fora o último artefato que de fato funciona.
+- **Cópia pendente nunca perde o staging.** Se o destino estava fora do ar, aquele zip só existe ali.
+- **A poda é guiada pelo banco, não por varredura da pasta.** Ela apaga exatamente os arquivos que cada build registrou, e nunca um `_STATUS.txt`, a pasta `latest\`, ou um zip que alguém copiou para lá na mão.
+
+A retenção também roda quando um job está adiado por falta de disco. Sem isso ele esperaria para sempre: a poda só acontece ao fim de uma build, e nenhuma ia começar.
 
 > Os demais campos de configuração da fase 2 (`MaintainLatestFolder`, `WriteStatusFiles`, `IncludeLauncher`, `Retention`, `ManualTriggerFile`, `GlobalStatusFile`) já existem e são validados, mas ainda não têm efeito.
 
