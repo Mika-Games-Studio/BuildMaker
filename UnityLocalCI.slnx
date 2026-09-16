@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/UnityLocalCI.Core/UnityLocalCI.Core.csproj" />
+    <Project Path="src/UnityLocalCI.Worker/UnityLocalCI.Worker.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/UnityLocalCI.Tests/UnityLocalCI.Tests.csproj" />
+  </Folder>
+</Solution>
