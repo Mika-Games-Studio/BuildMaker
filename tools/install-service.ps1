@@ -1,4 +1,4 @@
-<#
+﻿<#
     Instala o UnityLocalCI como servico do Windows.
 
     Execute como administrador.
