@@ -2,7 +2,7 @@
 
 Serviço de integração contínua que roda inteiramente numa máquina Windows local. Observa a branch de homologação de um ou mais projetos Unity, detecta commits novos, executa o build, compacta o resultado e copia o zip para a pasta de cada projeto.
 
-Sem nuvem, sem servidor HTTP, sem API, sem painel web. A pasta de destino é a interface.
+Aplicação .NET que roda na própria máquina, com janela e ícone na bandeja. Sem nuvem e sem painel web: a pasta de destino continua sendo a interface para quem só quer o artefato.
 
 **Estado atual: as três fases concluídas.** Ver [O que já existe](#o-que-já-existe-e-o-que-falta) ao final.
 
@@ -66,9 +66,33 @@ Todos os placeholders estão listados na seção seguinte. Enquanto houver um `P
 dotnet run --project src/UnityLocalCI.Worker
 ```
 
-Isso roda como aplicação de console, que é o modo de conferir a configuração. Para instalar como serviço, ver [Windows Service](#windows-service).
+Isso abre a janela, com o serviço rodando dentro dela.
 
-> **Se o `.exe` reclamar que o .NET não foi encontrado:** o SDK está instalado no perfil do usuário (`%USERPROFILE%\.dotnet`) e o apphost só procura em `C:\Program Files\dotnet`. Rode por `dotnet UnityLocalCI.Worker.dll`, ou defina `DOTNET_ROOT`. Antes de registrar o Windows Service, instale o .NET para toda a máquina.
+### A janela
+
+Um executável só, dois modos:
+
+| Como iniciar | O que acontece |
+|---|---|
+| `UnityLocalCI.exe` | Abre a janela, com o serviço rodando dentro |
+| `UnityLocalCI.exe --service` | Roda sem interface, para o Windows Service |
+
+A janela tem quatro abas:
+
+- **Projetos** — estado ao vivo de cada projeto, com botões para construir agora, abrir a pasta de destino, reenviar artefatos pendentes e parar ou iniciar o serviço
+- **Builds** — histórico das últimas 200 builds e o log completo da selecionada
+- **Log do serviço** — o que está acontecendo agora, ao vivo
+- **Configuração** — edita o `appsettings.json` pela interface, valida antes de gravar e oferece reiniciar o serviço
+
+Ela não guarda estado próprio: tudo o que mostra vem do mesmo SQLite que o serviço escreve, então nunca discorda do que aconteceu de verdade, e fechá-la não perde nada.
+
+Fechar pelo **X esconde na bandeja** e o serviço continua construindo. Sair de verdade é pelo menu da bandeja, que avisa que as builds param.
+
+> **A janela aberta não substitui o serviço.** Com tudo num executável só, as builds só acontecem enquanto o programa estiver rodando e a sessão do usuário estiver aberta. Para o CI funcionar com a máquina ligada e ninguém logado, registre-o como serviço — ver [Windows Service](#windows-service). Os dois modos usam exatamente os mesmos componentes; o que muda é só quem os hospeda.
+
+> **A aba de Configuração edita o `appsettings.json`**, não o `appsettings.local.json`. Se houver um arquivo local sobrescrevendo valores, o que a janela mostra não é o que o serviço está usando.
+
+> **Se o `.exe` reclamar que o .NET não foi encontrado:** o SDK está instalado no perfil do usuário (`%USERPROFILE%\.dotnet`) e o apphost só procura em `C:\Program Files\dotnet`. Rode por `dotnet UnityLocalCI.dll`, ou defina `DOTNET_ROOT`. Antes de registrar o Windows Service, instale o .NET para toda a máquina.
 
 ---
 
@@ -172,7 +196,7 @@ Também não usamos `--format json`: o log é transmitido em tempo real para `lo
 ```
 UnityLocalCI.sln
 ├── src/
-│   ├── UnityLocalCI.Worker/      host, DI, appsettings.json
+│   ├── UnityLocalCI.Worker/      janela, bandeja, modo servico e configuracao
 │   └── UnityLocalCI.Core/
 │       ├── Configuration/        opções tipadas, merge de Defaults, validação
 │       ├── Secrets/              Windows Credential Manager (P/Invoke CredRead)

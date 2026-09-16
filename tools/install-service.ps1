@@ -60,7 +60,7 @@ if (-not (Test-Path $Publicado)) {
     Erro "Pasta publicada nao encontrada em $Publicado. Rode antes: dotnet publish src\UnityLocalCI.Worker -c Release -o publicado"
 }
 
-$exe = Join-Path $Publicado 'UnityLocalCI.Worker.exe'
+$exe = Join-Path $Publicado 'UnityLocalCI.exe'
 if (-not (Test-Path $exe)) { Erro "Executavel nao encontrado em $exe." }
 Ok "Executavel em $exe"
 
@@ -139,7 +139,7 @@ if ($existente) {
     Ok "Registro anterior removido."
 }
 
-$argumentos = @('create', $NomeServico, "binPath= `"$exe`"", 'start= auto',
+$argumentos = @('create', $NomeServico, "binPath= `"$exe --service`"", 'start= auto',
                 "DisplayName= `"UnityLocalCI`"")
 if ($Conta) { $argumentos += "obj= `"$Conta`"" }
 

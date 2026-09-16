@@ -157,6 +157,46 @@ public class RetentionServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Build_que_acabou_de_falhar_mantem_o_log()
+    {
+        // Regressao: a retencao contava so builds bem-sucedidas, entao uma
+        // falha era podada na mesma execucao que a criou. O _STATUS.txt mandava
+        // abrir "ver _logs\build-1.log" e o arquivo ja nao existia.
+        var id = await SeedAsync(status: BuildStatus.Failed);
+
+        await Create().ApplyAsync(Project(keepLastBuilds: 10), default);
+
+        Assert.True(File.Exists(Path.Combine(_logs, $"build-{id}.log")),
+            "o log da build recem-falhada precisa sobreviver a retencao");
+        Assert.True(File.Exists(Path.Combine(_destination, "_logs", $"build-{id}.log")));
+    }
+
+    [Fact]
+    public async Task Falhas_recentes_mantem_o_log_mesmo_sem_nenhuma_build_boa()
+    {
+        var ids = new List<long>();
+        for (var i = 0; i < 3; i++) ids.Add(await SeedAsync(status: BuildStatus.Failed));
+
+        await Create().ApplyAsync(Project(keepLastBuilds: 10), default);
+
+        foreach (var id in ids)
+            Assert.True(File.Exists(Path.Combine(_logs, $"build-{id}.log")));
+    }
+
+    [Fact]
+    public async Task Falhas_antigas_ainda_sao_podadas()
+    {
+        var antiga = await SeedAsync(status: BuildStatus.Failed);
+        for (var i = 0; i < 5; i++) await SeedAsync();
+
+        await Create().ApplyAsync(Project(keepLastBuilds: 2), default);
+
+        // O piso e por contagem, nao "falha nunca e podada": manter falhas para
+        // sempre encheria o disco com o que ninguem vai ler.
+        Assert.False(File.Exists(Path.Combine(_logs, $"build-{antiga}.log")));
+    }
+
+    [Fact]
     public async Task Nada_a_podar_nao_mexe_em_nada()
     {
         for (var i = 0; i < 3; i++) await SeedAsync();
