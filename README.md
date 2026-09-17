@@ -128,14 +128,25 @@ Um executável só, dois modos:
 | `UnityLocalCI.exe` | Abre a janela, com o serviço rodando dentro |
 | `UnityLocalCI.exe --service` | Roda sem interface, para o Windows Service |
 
-A janela tem quatro abas:
+A navegação é uma **coluna à esquerda**, com quatro páginas:
 
 - **Projetos** — estado ao vivo de cada projeto, com botões para construir agora, abrir a pasta de destino, reenviar artefatos pendentes e parar ou iniciar o serviço
 - **Builds** — histórico das últimas 200 builds e o log completo da selecionada
 - **Log do serviço** — o que está acontecendo agora, ao vivo
 - **Configuração** — edita o `appsettings.json` pela interface, valida antes de gravar e oferece reiniciar o serviço
 
-A janela usa **tema escuro**, aplicado controle a controle: o WinForms não tem tema, cada controle pinta com as cores do sistema. A barra de título escurece por uma chamada ao DWM, e as abas são desenhadas pela própria aplicação, porque desenhar só os itens deixaria uma faixa clara à direita da última aba.
+Cada página tem cabeçalho com as próprias ações, e o rodapé mostra o estado do serviço e os números da fila.
+
+#### O visual
+
+Tema escuro quente, com a paleta em degraus — fundo, superfície, superfície elevada — e **um único destaque**, o coral, reservado para a ação principal, o item de navegação ativo e a build em execução. A profundidade vem dos cartões arredondados com contorno discreto, e não de sombra: o WinForms não desenha sombra de verdade, e uma sombra falsa sobre fundo liso fica pior que nenhuma.
+
+O WinForms não tem tema — cada controle pinta com as cores do sistema —, então:
+
+- os controles próprios (coluna de navegação, botões, cartões, rodapé, seletor segmentado da configuração, lista de projetos) **se desenham por inteiro**, com `TextRenderer` para o texto sair com o mesmo peso do resto do sistema
+- os ícones da navegação são **desenhados em GDI+**, não tirados de uma fonte de símbolos: fonte de ícone que não existe na máquina vira quadradinho, e a lista de símbolos muda entre versões do Windows
+- a barra de título escurece por uma chamada ao **DWM**
+- barras de rolagem, caixas de diálogo e menus de contexto são desenhados pelo Windows, e escurecem por `Application.SetColorMode(SystemColorMode.Dark)` — a API ainda é marcada como experimental, então a chamada é protegida: se um dia ela mudar, o pior caso é essas partes voltarem a ser claras, e o resto da janela não depende dela
 
 Ela não guarda estado próprio: tudo o que mostra vem do mesmo SQLite que o serviço escreve, então nunca discorda do que aconteceu de verdade, e fechá-la não perde nada.
 
@@ -143,7 +154,7 @@ Fechar pelo **X esconde na bandeja** e o serviço continua construindo. Sair de 
 
 > **A janela aberta não substitui o serviço.** Com tudo num executável só, as builds só acontecem enquanto o programa estiver rodando e a sessão do usuário estiver aberta. Para o CI funcionar com a máquina ligada e ninguém logado, registre-o como serviço — ver [Windows Service](#windows-service). Os dois modos usam exatamente os mesmos componentes; o que muda é só quem os hospeda.
 
-> **A aba de Configuração edita o `appsettings.json`**, não o `appsettings.local.json`. Se houver um arquivo local sobrescrevendo valores, o que a janela mostra não é o que o serviço está usando.
+> **A página de Configuração edita o `appsettings.json`**, não o `appsettings.local.json`. Se houver um arquivo local sobrescrevendo valores, o que a janela mostra não é o que o serviço está usando.
 
 > **Se o `.exe` reclamar que o .NET não foi encontrado:** o SDK está instalado no perfil do usuário (`%USERPROFILE%\.dotnet`) e o apphost só procura em `C:\Program Files\dotnet`. Rode por `dotnet UnityLocalCI.dll`, ou defina `DOTNET_ROOT`. Antes de registrar o Windows Service, instale o .NET para toda a máquina.
 

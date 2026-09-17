@@ -57,6 +57,15 @@ static int RunWindow()
 {
     ApplicationConfiguration.Initialize();
 
+    // Modo escuro do proprio WinForms. E o que escurece o que o tema nao
+    // alcanca: barras de rolagem, caixas de dialogo e menus de contexto, que
+    // sao desenhados pelo Windows e nao pelo aplicativo. Se um dia a API mudar,
+    // o pior caso e voltarem a ser claros — o resto da janela nao depende dela.
+#pragma warning disable WFO5001 // A API ainda e marcada como experimental.
+    try { Application.SetColorMode(SystemColorMode.Dark); }
+    catch (Exception) { /* Windows sem suporte: segue com o tema proprio */ }
+#pragma warning restore WFO5001
+
     var liveLog = new LiveLog();
     var configPath = ConfigFile.DefaultPath;
     var controller = new HostController(liveLog, configPath);

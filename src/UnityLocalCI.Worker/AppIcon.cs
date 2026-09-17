@@ -34,4 +34,26 @@ public static class AppIcon
         using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(ResourceName);
         return stream is null ? SystemIcons.Application : new Icon(stream, size);
     }
+
+    private static Bitmap? _mark;
+
+    /// <summary>
+    /// A marca desenhada no topo da coluna de navegacao. Vem do quadro de 32
+    /// pixels e nao do de 16: reduzir um desenho grande sai limpo, ampliar um
+    /// pequeno sai serrilhado.
+    /// </summary>
+    public static Image LoadMark()
+    {
+        if (_mark is not null) return _mark;
+
+        using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(ResourceName);
+
+        // SystemIcons.Application e compartilhado pelo processo inteiro: usar,
+        // sim; descartar, nunca.
+        var icon = stream is null ? SystemIcons.Application : new Icon(stream, 32, 32);
+        _mark = icon.ToBitmap();
+        if (stream is not null) icon.Dispose();
+
+        return _mark;
+    }
 }

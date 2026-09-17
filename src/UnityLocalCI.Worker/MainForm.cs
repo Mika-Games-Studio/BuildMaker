@@ -10,11 +10,15 @@ using UnityLocalCI.Core.Watching;
 namespace UnityLocalCI.App;
 
 /// <summary>
-/// A janela do UnityLocalCI. Quatro abas: projetos, builds, log e configuracao.
+/// A janela do UnityLocalCI. Quatro paginas: projetos, builds, log e configuracao.
 ///
 /// Ela nao guarda estado proprio: tudo que mostra vem do mesmo SQLite que o
 /// servico escreve. Assim a janela nunca discorda do que aconteceu de verdade,
 /// e fecha-la nao perde nada.
+///
+/// A navegacao e uma coluna a esquerda, e cada pagina tem cabecalho com as
+/// proprias acoes. Abas no topo com uma barra de botoes embaixo gastavam duas
+/// faixas de altura para dizer menos.
 /// </summary>
 public sealed class MainForm : Form
 {
@@ -31,17 +35,14 @@ public sealed class MainForm : Form
     private readonly TextBox _serviceLog = NewMonospaceBox();
     private readonly ConfigPanel _configPanel;
 
-    private readonly Label _status = new()
-    {
-        Dock = DockStyle.Fill,
-        TextAlign = ContentAlignment.MiddleLeft,
-        Padding = new Padding(8, 0, 0, 0),
-    };
+    private readonly StatusBar _status = new();
+    private readonly Panel _pageHost = new() { Dock = DockStyle.Fill, BackColor = Theme.Canvas };
+    private readonly List<Panel> _pages = [];
 
-    private readonly Button _buildNow = new() { Text = "Construir agora", Width = 130, Height = 28 };
-    private readonly Button _openFolder = new() { Text = "Abrir pasta", Width = 100, Height = 28 };
-    private readonly Button _republish = new() { Text = "Reenviar pendentes", Width = 140, Height = 28 };
-    private readonly Button _toggleHost = new() { Text = "Parar servico", Width = 110, Height = 28 };
+    private readonly PillButton _buildNow = new("Construir agora", ButtonKind.Primary) { Width = 136 };
+    private readonly PillButton _openFolder = new("Abrir pasta") { Width = 104 };
+    private readonly PillButton _republish = new("Reenviar pendentes", ButtonKind.Ghost) { Width = 148 };
+    private readonly PillButton _toggleHost = new("Parar serviço", ButtonKind.Ghost) { Width = 116 };
 
     private long? _selectedBuildId;
 
@@ -64,10 +65,13 @@ public sealed class MainForm : Form
 
         Text = "UnityLocalCI";
         Icon = AppIcon.Load();
-        Width = 1100;
-        Height = 700;
-        MinimumSize = new Size(820, 520);
+        Width = 1180;
+        Height = 740;
+        MinimumSize = new Size(900, 560);
         StartPosition = FormStartPosition.CenterScreen;
+        BackColor = Theme.Canvas;
+        ForeColor = Theme.Text;
+        Font = Theme.Ui;
 
         BuildLayout();
 
@@ -104,100 +108,162 @@ public sealed class MainForm : Form
 
     private void BuildLayout()
     {
-        var tabs = new DarkTabControl { Dock = DockStyle.Fill };
-        tabs.TabPages.Add(BuildProjectsTab());
-        tabs.TabPages.Add(BuildBuildsTab());
-        tabs.TabPages.Add(BuildServiceLogTab());
-        tabs.TabPages.Add(BuildConfigTab());
+        _pages.Add(BuildProjectsPage());
+        _pages.Add(BuildBuildsPage());
+        _pages.Add(BuildServiceLogPage());
+        _pages.Add(BuildConfigPage());
 
-        var statusStrip = new Panel { Dock = DockStyle.Bottom, Height = 30 };
-        statusStrip.Controls.Add(_status);
+        foreach (var page in _pages)
+        {
+            page.Visible = false;
+            _pageHost.Controls.Add(page);
+        }
 
-        Controls.Add(tabs);
-        Controls.Add(statusStrip);
+        _pages[0].Visible = true;
+
+        var conteudo = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = Theme.Canvas,
+            Padding = new Padding(20, 2, 20, 10),
+        };
+        conteudo.Controls.Add(_pageHost);
+
+        var rail = new NavRail { Dock = DockStyle.Left, HeaderMark = AppIcon.LoadMark() };
+        rail.AddItem("Projetos", NavGlyph.Projects);
+        rail.AddItem("Builds", NavGlyph.Builds);
+        rail.AddItem("Log do serviço", NavGlyph.Log);
+        rail.AddItem("Configuração", NavGlyph.Settings);
+        rail.SelectionChanged += ShowPage;
+
+        // Ordem importa: o ultimo adicionado e posicionado primeiro e fica com a
+        // borda externa. A coluna precisa da altura inteira, entao entra por ultimo.
+        Controls.Add(conteudo);
+        Controls.Add(_status);
+        Controls.Add(rail);
     }
 
-    private TabPage BuildProjectsTab()
+    private void ShowPage(int index)
     {
-        var page = new TabPage("Projetos") { Padding = new Padding(8) };
+        for (var i = 0; i < _pages.Count; i++)
+            _pages[i].Visible = i == index;
+    }
 
-        var buttons = new FlowLayoutPanel
-        {
-            Dock = DockStyle.Bottom,
-            Height = 40,
-            Padding = new Padding(0, 6, 0, 0),
-        };
+    /// <summary>
+    /// Monta a pagina. O corpo entra antes do cabecalho de proposito: o
+    /// WinForms posiciona os filhos do ultimo para o primeiro, entao quem entra
+    /// depois e que fica com a borda.
+    /// </summary>
+    private static Panel NewPage(PageHeader header, Control body)
+    {
+        var page = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Canvas };
+        body.Dock = DockStyle.Fill;
+
+        page.Controls.Add(body);
+        page.Controls.Add(header);
+
+        return page;
+    }
+
+    private Panel BuildProjectsPage()
+    {
+        var header = new PageHeader(
+            "Projetos",
+            "O que o serviço observa e como terminou a última build de cada um.");
 
         _buildNow.Click += (_, _) => BuildSelectedProject();
         _openFolder.Click += (_, _) => OpenSelectedFolder();
         _republish.Click += (_, _) => RepublishPending();
         _toggleHost.Click += (_, _) => ToggleHost();
 
-        buttons.Controls.AddRange(new Control[] { _buildNow, _openFolder, _republish, _toggleHost });
+        // Fluxo da direita para a esquerda: o primeiro adicionado fica na ponta
+        // direita, que e onde se procura a acao principal.
+        header.Actions.Controls.AddRange([_buildNow, _openFolder, _republish, _toggleHost]);
 
-        _projectsGrid.Dock = DockStyle.Fill;
         _projectsGrid.Columns.AddRange(
-            TextColumn("Projeto", 130),
-            TextColumn("Estado", 100),
+            TextColumn("Projeto", 150),
+            TextColumn("Estado", 110),
             TextColumn("Última build", 130),
-            TextColumn("Commit", 80),
+            TextColumn("Commit", 90),
             TextColumn("Duração", 90),
             TextColumn("Artefato", 300));
 
-        page.Controls.Add(_projectsGrid);
-        page.Controls.Add(buttons);
-        return page;
+        StretchLastColumn(_projectsGrid);
+
+        return NewPage(header, NewCard(_projectsGrid));
     }
 
-    private TabPage BuildBuildsTab()
+    private Panel BuildBuildsPage()
     {
-        var page = new TabPage("Builds") { Padding = new Padding(8) };
+        var header = new PageHeader(
+            "Builds",
+            "Histórico das execuções. Selecione uma linha para ler o log dela.");
+
+        _buildsGrid.Columns.AddRange(
+            TextColumn("#", 60),
+            TextColumn("Projeto", 120),
+            TextColumn("Resultado", 110),
+            TextColumn("Quando", 110),
+            TextColumn("Duração", 90),
+            TextColumn("Commit", 90),
+            TextColumn("Autor", 130),
+            TextColumn("Erro", 320));
+
+        StretchLastColumn(_buildsGrid);
+        _buildsGrid.SelectionChanged += (_, _) => ShowSelectedBuildLog();
 
         var split = new SplitContainer
         {
             Dock = DockStyle.Fill,
             Orientation = Orientation.Horizontal,
-            SplitterDistance = 250,
+            SplitterWidth = 10,
+            BackColor = Theme.Canvas,
         };
 
-        _buildsGrid.Dock = DockStyle.Fill;
-        _buildsGrid.Columns.AddRange(
-            TextColumn("#", 55),
-            TextColumn("Projeto", 110),
-            TextColumn("Resultado", 100),
-            TextColumn("Quando", 130),
-            TextColumn("Duração", 90),
-            TextColumn("Commit", 80),
-            TextColumn("Autor", 150),
-            TextColumn("Erro", 320));
+        split.Panel1.Controls.Add(NewCard(_buildsGrid));
+        split.Panel2.Controls.Add(NewCard(_buildLog));
 
-        _buildsGrid.SelectionChanged += (_, _) => ShowSelectedBuildLog();
+        // Depois de a janela existir: SplitterDistance lanca se for maior que a
+        // altura atual do container, que no momento da montagem ainda e zero.
+        split.HandleCreated += (_, _) =>
+        {
+            var desejado = (int)(split.Height * 0.55);
+            if (desejado > split.Panel1MinSize && desejado < split.Height - split.Panel2MinSize)
+                split.SplitterDistance = desejado;
+        };
 
-        split.Panel1.Controls.Add(_buildsGrid);
-        split.Panel2.Controls.Add(_buildLog);
-
-        page.Controls.Add(split);
-        return page;
+        return NewPage(header, split);
     }
 
-    private TabPage BuildServiceLogTab()
+    private Panel BuildServiceLogPage()
     {
-        var page = new TabPage("Log do serviço") { Padding = new Padding(8) };
+        var header = new PageHeader(
+            "Log do serviço",
+            "Saída ao vivo do serviço: watchers, fila e publicação.");
 
-        var clear = new Button { Text = "Limpar", Dock = DockStyle.Bottom, Height = 28 };
-        clear.Click += (_, _) => { _liveLog.Clear(); _serviceLog.Clear(); };
+        var limpar = new PillButton("Limpar", ButtonKind.Ghost) { Width = 90 };
+        limpar.Click += (_, _) => { _liveLog.Clear(); _serviceLog.Clear(); };
+        header.Actions.Controls.Add(limpar);
 
-        page.Controls.Add(_serviceLog);
-        page.Controls.Add(clear);
-        return page;
+        return NewPage(header, NewCard(_serviceLog));
     }
 
-    private TabPage BuildConfigTab()
+    private Panel BuildConfigPage()
     {
-        var page = new TabPage("Configuração") { Padding = new Padding(8) };
-        _configPanel.Dock = DockStyle.Fill;
-        page.Controls.Add(_configPanel);
-        return page;
+        var header = new PageHeader(
+            "Configuração",
+            "Gravar passa pela mesma validação da inicialização do serviço.");
+
+        return NewPage(header, _configPanel);
+    }
+
+    /// <summary>Envolve um controle num cartao, com folga para os cantos arredondados aparecerem.</summary>
+    private static Card NewCard(Control content)
+    {
+        var card = new Card { Dock = DockStyle.Fill, Padding = new Padding(10) };
+        content.Dock = DockStyle.Fill;
+        card.Controls.Add(content);
+        return card;
     }
 
     // -------------------------------------------------------------------- dados
@@ -240,23 +306,23 @@ public sealed class MainForm : Form
                 var last = recent.FirstOrDefault(b => b.FinishedAt is not null);
 
                 rows.Add(current is not null
-                    ? new[] { project.Name, "construindo", Local(current.StartedAt), current.ShortSha, "—", "—" }
+                    ? [project.Name, "EM EXECUÇÃO", Local(current.StartedAt), current.ShortSha, "—", "—"]
                     : last is null
-                        ? new[] { project.Name, "—", "nunca", "—", "—", "—" }
-                        : new[]
-                        {
+                        ? [project.Name, "—", "nunca", "—", "—", "—"]
+                        :
+                        [
                             project.Name,
                             StatusFormatter.Label(last.Status),
                             Local(last.FinishedAt),
                             last.ShortSha,
                             StatusFormatter.FormatDuration(last.DurationSeconds),
                             last.PublishedPath ?? last.ArtifactPath ?? "—",
-                        });
+                        ]);
             }
 
             BeginInvoke(() =>
             {
-                Fill(_projectsGrid, rows);
+                Fill(_projectsGrid, rows, statusColumn: 1);
                 Fill(_buildsGrid, builds
                     .OrderByDescending(b => b.Id)
                     .Take(200)
@@ -271,7 +337,13 @@ public sealed class MainForm : Form
                         b.CommitAuthor ?? "—",
                         FirstLine(b.ErrorSummary),
                     })
-                    .ToList());
+                    .ToList(), statusColumn: 2);
+
+                // A grade seleciona a primeira linha assim que ela e criada,
+                // antes de as celulas terem valor: naquele instante nao havia id
+                // para carregar, e o painel de log ficava vazio ate alguem
+                // clicar. Aqui ja ha.
+                ShowSelectedBuildLog();
 
                 UpdateStatus();
             });
@@ -283,8 +355,12 @@ public sealed class MainForm : Form
     /// <summary>
     /// Reescreve as celulas em vez de recriar as linhas: recriar faria a
     /// selecao e a posicao da rolagem saltarem a cada tres segundos.
+    ///
+    /// So a celula de resultado recebe cor. Pintar a linha inteira de vermelho
+    /// deixava o resto — projeto, commit, autor — dificil de ler por um dado que
+    /// cabe numa coluna so.
     /// </summary>
-    private static void Fill(DataGridView grid, IReadOnlyList<string[]> rows)
+    private static void Fill(DataGridView grid, IReadOnlyList<string[]> rows, int statusColumn)
     {
         while (grid.Rows.Count > rows.Count) grid.Rows.RemoveAt(grid.Rows.Count - 1);
         while (grid.Rows.Count < rows.Count) grid.Rows.Add();
@@ -298,15 +374,38 @@ public sealed class MainForm : Form
                     grid.Rows[r].Cells[c].Value = value;
             }
 
-            grid.Rows[r].DefaultCellStyle.ForeColor = rows[r].Any(v => v is "FALHOU" or "INTERROMPIDA")
-                ? Theme.Danger
-                : grid.DefaultCellStyle.ForeColor;
+            if (statusColumn >= grid.ColumnCount) continue;
+
+            var celula = grid.Rows[r].Cells[statusColumn];
+            celula.Style.ForeColor = StatusColor(celula.Value as string);
+            celula.Style.SelectionForeColor = celula.Style.ForeColor;
+            celula.Style.Font = Theme.UiSmallBold;
         }
     }
 
+    private static Color StatusColor(string? label) => label switch
+    {
+        "SUCESSO" => Theme.Success,
+        "FALHOU" => Theme.Danger,
+        "INTERROMPIDA" or "CANCELADA" => Theme.Warning,
+        "EM EXECUÇÃO" => Theme.Accent,
+        "NA FILA" => Theme.Info,
+        _ => Theme.TextMuted,
+    };
+
     private void ShowSelectedBuildLog()
     {
-        if (_buildsGrid.CurrentRow?.Cells[0].Value is not string idText || !long.TryParse(idText, out var id))
+        // Enquanto a pagina esta escondida a grade nao define linha corrente,
+        // entao sem este recuo o painel de log ficava em branco ate alguem
+        // clicar — inclusive na build que acabou de falhar.
+        var linha = _buildsGrid.CurrentRow;
+        if (linha is null && _buildsGrid.Rows.Count > 0)
+        {
+            linha = _buildsGrid.Rows[0];
+            linha.Selected = true;
+        }
+
+        if (linha?.Cells[0].Value is not string idText || !long.TryParse(idText, out var id))
             return;
 
         if (_selectedBuildId == id) return;
@@ -453,22 +552,22 @@ public sealed class MainForm : Form
     {
         _toggleHost.Text = _controller.State == HostState.Rodando ? "Parar serviço" : "Iniciar serviço";
 
-        var texto = _controller.State switch
+        var (texto, cor) = _controller.State switch
         {
-            HostState.Rodando => "Serviço em execução",
-            HostState.Iniciando => "Iniciando...",
-            HostState.Parado => "Serviço parado",
-            _ => "Falhou ao iniciar: " + string.Join("  |  ", _controller.StartupErrors),
+            HostState.Rodando => ("Serviço em execução", Theme.Success),
+            HostState.Iniciando => ("Iniciando...", Theme.Warning),
+            HostState.Parado => ("Serviço parado", Theme.TextFaint),
+            _ => ("Falhou ao iniciar: " + string.Join("  |  ", _controller.StartupErrors), Theme.Danger),
         };
 
+        var direita = "";
         if (_controller.State == HostState.Rodando && _controller.Services is not null)
         {
             var snapshot = _controller.Services.GetRequiredService<IBuildScheduler>().Snapshot();
-            texto += $"   ·   fila: {snapshot.Waiting}   ·   em execução: {snapshot.Running} de {snapshot.MaxConcurrentBuilds}";
+            direita = $"fila {snapshot.Waiting}   ·   em execução {snapshot.Running} de {snapshot.MaxConcurrentBuilds}";
         }
 
-        _status.Text = texto;
-        _status.ForeColor = _controller.State == HostState.Falhou ? Theme.Danger : Theme.Text;
+        _status.Set(texto, cor, direita);
 
         _buildNow.Enabled = _controller.State == HostState.Rodando;
         _republish.Enabled = _controller.State == HostState.Rodando;
@@ -509,6 +608,7 @@ public sealed class MainForm : Form
 
     private static DataGridView NewGrid() => new()
     {
+        Dock = DockStyle.Fill,
         AllowUserToAddRows = false,
         AllowUserToDeleteRows = false,
         AllowUserToResizeRows = false,
@@ -519,7 +619,16 @@ public sealed class MainForm : Form
         BackgroundColor = Theme.Surface,
         BorderStyle = BorderStyle.None,
         AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None,
+        ScrollBars = ScrollBars.Both,
     };
+
+    /// <summary>A ultima coluna ocupa a sobra, para nao ficar um vazio a direita.</summary>
+    private static void StretchLastColumn(DataGridView grid)
+    {
+        var last = grid.Columns[grid.ColumnCount - 1];
+        last.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
+        last.MinimumWidth = 160;
+    }
 
     private static TextBox NewMonospaceBox() => new()
     {
@@ -528,8 +637,10 @@ public sealed class MainForm : Form
         ReadOnly = true,
         ScrollBars = ScrollBars.Both,
         WordWrap = false,
-        Font = new Font("Consolas", 9f),
+        Font = Theme.Mono,
         BackColor = Theme.Surface,
+        ForeColor = Theme.Blend(Theme.Text, Theme.TextMuted, 0.35),
+        BorderStyle = BorderStyle.None,
     };
 
     private static DataGridViewTextBoxColumn TextColumn(string header, int width)

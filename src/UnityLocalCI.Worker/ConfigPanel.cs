@@ -21,14 +21,16 @@ public sealed class ConfigPanel : UserControl
 
     private readonly PropertyGrid _schedulerGrid = NewPropertyGrid();
     private readonly PropertyGrid _projectGrid = NewPropertyGrid();
-    private readonly ListBox _projectList = new() { Dock = DockStyle.Fill, IntegralHeight = false };
+
+    private readonly DarkListBox _projectList = new() { Dock = DockStyle.Fill };
+
     private readonly Label _problems = new()
     {
         Dock = DockStyle.Bottom,
         AutoSize = false,
-        Height = 70,
+        Height = 64,
         ForeColor = Theme.Danger,
-        Padding = new Padding(4),
+        Padding = new Padding(2, 8, 2, 4),
     };
 
     private CiOptions _options = new();
@@ -44,53 +46,90 @@ public sealed class ConfigPanel : UserControl
 
     private void BuildLayout()
     {
-        var tabs = new DarkTabControl { Dock = DockStyle.Fill };
+        BackColor = Theme.Canvas;
+
+        var tabs = new SegmentedTabControl { Dock = DockStyle.Fill };
 
         // --- geral
-        var geral = new TabPage("Geral") { Padding = new Padding(6) };
+        var geral = new TabPage("Geral") { Padding = new Padding(0, 10, 0, 0) };
         _schedulerGrid.Dock = DockStyle.Fill;
-        geral.Controls.Add(_schedulerGrid);
+        geral.Controls.Add(WrapInCard(_schedulerGrid));
         tabs.TabPages.Add(geral);
 
         // --- projetos
-        var projetos = new TabPage("Projetos") { Padding = new Padding(6) };
+        var projetos = new TabPage("Projetos") { Padding = new Padding(0, 10, 0, 0) };
 
-        var split = new SplitContainer { Dock = DockStyle.Fill, SplitterDistance = 200 };
+        var split = new SplitContainer
+        {
+            Dock = DockStyle.Fill,
+            SplitterWidth = 10,
+            BackColor = Theme.Canvas,
+        };
 
-        var listaBotoes = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 34 };
-        var adicionar = new Button { Text = "Adicionar", Width = 90 };
-        var remover = new Button { Text = "Remover", Width = 90 };
+        var listaBotoes = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Bottom,
+            Height = 40,
+            Padding = new Padding(0, 8, 0, 0),
+            BackColor = Theme.Surface,
+        };
+
+        var adicionar = new PillButton("Adicionar") { Width = 96, Backdrop = Theme.Surface };
+        var remover = new PillButton("Remover", ButtonKind.Ghost) { Width = 92, Backdrop = Theme.Surface };
         adicionar.Click += (_, _) => AddProject();
         remover.Click += (_, _) => RemoveProject();
-        listaBotoes.Controls.AddRange(new Control[] { adicionar, remover });
+        listaBotoes.Controls.AddRange([adicionar, remover]);
 
         _projectList.SelectedIndexChanged += (_, _) => ShowSelectedProject();
 
-        split.Panel1.Controls.Add(_projectList);
-        split.Panel1.Controls.Add(listaBotoes);
-        split.Panel2.Controls.Add(_projectGrid);
+        var listaCartao = WrapInCard(_projectList);
+        listaCartao.Controls.Add(listaBotoes);
+
+        split.Panel1.Controls.Add(listaCartao);
+        split.Panel2.Controls.Add(WrapInCard(_projectGrid));
+
+        // Depois de a janela existir: SplitterDistance lanca enquanto a largura
+        // do container ainda e zero.
+        split.HandleCreated += (_, _) =>
+        {
+            if (split.Width > 460) split.SplitterDistance = 240;
+        };
 
         projetos.Controls.Add(split);
         tabs.TabPages.Add(projetos);
 
         // --- rodape
-        var acoes = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 40, Padding = new Padding(0, 6, 0, 0) };
+        var acoes = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Bottom,
+            Height = 44,
+            Padding = new Padding(0, 10, 0, 0),
+            BackColor = Theme.Canvas,
+        };
 
-        var salvar = new Button { Text = "Salvar", Width = 100, Height = 28 };
-        var salvarReiniciar = new Button { Text = "Salvar e reiniciar", Width = 140, Height = 28 };
-        var descartar = new Button { Text = "Descartar", Width = 100, Height = 28 };
-        var abrirArquivo = new Button { Text = "Abrir o arquivo", Width = 120, Height = 28 };
+        var salvarReiniciar = new PillButton("Salvar e reiniciar", ButtonKind.Primary) { Width = 152 };
+        var salvar = new PillButton("Salvar") { Width = 96 };
+        var descartar = new PillButton("Descartar", ButtonKind.Ghost) { Width = 100 };
+        var abrirArquivo = new PillButton("Abrir o arquivo", ButtonKind.Ghost) { Width = 128 };
 
         salvar.Click += (_, _) => Save(restart: false);
         salvarReiniciar.Click += (_, _) => Save(restart: true);
         descartar.Click += (_, _) => Reload();
         abrirArquivo.Click += (_, _) => OpenInEditor();
 
-        acoes.Controls.AddRange(new Control[] { salvarReiniciar, salvar, descartar, abrirArquivo });
+        acoes.Controls.AddRange([salvarReiniciar, salvar, descartar, abrirArquivo]);
 
         Controls.Add(tabs);
         Controls.Add(_problems);
         Controls.Add(acoes);
+    }
+
+    private static Card WrapInCard(Control content)
+    {
+        var card = new Card { Dock = DockStyle.Fill, Padding = new Padding(10) };
+        content.Dock = DockStyle.Fill;
+        card.Controls.Add(content);
+        return card;
     }
 
     // ------------------------------------------------------------------ dados
@@ -100,12 +139,12 @@ public sealed class ConfigPanel : UserControl
         try
         {
             _options = ConfigFile.Load(_configPath);
-            _problems.Text = "";
+            Report("", problema: false);
         }
         catch (Exception exception)
         {
             _options = new CiOptions();
-            _problems.Text = "Nao foi possivel ler o arquivo: " + exception.Message;
+            Report("Não foi possível ler o arquivo: " + exception.Message, problema: true);
         }
 
         _schedulerGrid.SelectedObject = _options.Scheduler;
@@ -181,12 +220,12 @@ public sealed class ConfigPanel : UserControl
 
         if (problemas.Count > 0)
         {
-            _problems.Text = "Nao gravado:" + Environment.NewLine +
-                             string.Join(Environment.NewLine, problemas.Take(4).Select(p => "  - " + p));
+            Report("Não gravado:" + Environment.NewLine +
+                   string.Join(Environment.NewLine, problemas.Take(4).Select(p => "  - " + p)), problema: true);
             return;
         }
 
-        _problems.Text = "Gravado em " + _configPath;
+        Report("Gravado em " + _configPath, problema: false);
         RefreshProjectList();
 
         if (!restart) return;
@@ -194,10 +233,27 @@ public sealed class ConfigPanel : UserControl
         _ = Task.Run(async () =>
         {
             var ok = await _controller.RestartAsync();
-            BeginInvoke(() => _problems.Text = ok
-                ? "Gravado e servico reiniciado."
-                : "Gravado, mas o servico nao subiu: " + string.Join(" | ", _controller.StartupErrors));
+            BeginInvoke(() =>
+            {
+                if (ok) Report("Gravado e serviço reiniciado.", problema: false);
+                else Report("Gravado, mas o serviço não subiu: " +
+                            string.Join(" | ", _controller.StartupErrors), problema: true);
+            });
         });
+    }
+
+    /// <summary>
+    /// A mesma linha diz as duas coisas, entao a cor precisa acompanhar: sucesso
+    /// escrito em vermelho ensina o usuario a ignorar o vermelho.
+    /// </summary>
+    private void Report(string text, bool problema)
+    {
+        _problems.Text = text;
+        _problems.ForeColor = problema ? Theme.Danger : Theme.Success;
+
+        // Escondida quando nao ha o que dizer: uma faixa vazia de 60 pixels
+        // entre o conteudo e os botoes so faz a tela parecer desalinhada.
+        _problems.Visible = text.Length > 0;
     }
 
     private void OpenInEditor()
