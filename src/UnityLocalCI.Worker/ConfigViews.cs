@@ -132,6 +132,24 @@ public sealed class GeneralView(CiOptions options)
 }
 
 /// <summary>
+/// Oferece as branches do repositorio como lista no campo Branch.
+///
+/// Nao exclusiva de proposito: da para digitar uma branch que ainda nao existe
+/// no servidor — e comum cadastrar o projeto antes de criar a branch de
+/// homologacao. A lista evita o erro de digitacao; ela nao manda em quem sabe o
+/// que esta fazendo.
+/// </summary>
+public sealed class BranchConverter : StringConverter
+{
+    public override bool GetStandardValuesSupported(ITypeDescriptorContext? context) => true;
+
+    public override bool GetStandardValuesExclusive(ITypeDescriptorContext? context) => false;
+
+    public override StandardValuesCollection GetStandardValues(ITypeDescriptorContext? context)
+        => new((context?.Instance as ProjectView)?.KnownBranches.ToArray() ?? []);
+}
+
+/// <summary>
 /// Achata o projeto para o PropertyGrid: sem isto, Repository, Unity e
 /// Publishing apareceriam como sub-objetos que o usuario precisa expandir um a
 /// um, e os campos herdados de Defaults nao teriam explicacao nenhuma.
@@ -142,12 +160,17 @@ public sealed class ProjectView
     private readonly RepositoryOptions _repository;
     private readonly PublishingOptions _publishing;
 
+    private readonly BranchCatalog? _branches;
+
     private string? _detectedFor;
     private string? _detected;
 
-    public ProjectView(ProjectOptions project)
+    public ProjectView(ProjectOptions project) : this(project, null) { }
+
+    public ProjectView(ProjectOptions project, BranchCatalog? branches)
     {
         _project = project;
+        _branches = branches;
 
         // Guardados em campos nao-anulaveis: as sobrescritas por projeto sao
         // opcionais na configuracao, mas a tela sempre tem onde escrever.
@@ -206,12 +229,22 @@ public sealed class ProjectView
     }
 
     [Category("Repositório")]
-    [Description("Branch observada. A build dispara quando o HEAD dela muda.")]
+    [Description(
+        "Branch observada. A build dispara quando o HEAD dela muda. A lista vem do repositório — do clone " +
+        "local na hora, e do servidor assim que ele responder. Dá para digitar uma que ainda não existe.")]
+    [TypeConverter(typeof(BranchConverter))]
     public string Branch
     {
         get => _repository.Branch;
         set => _repository.Branch = Texto.Limpo(value);
     }
+
+    /// <summary>
+    /// O que o dropdown de branches oferece. Fora da grade: e uma lista de
+    /// apoio, nao um campo da configuracao.
+    /// </summary>
+    [Browsable(false)]
+    public IReadOnlyList<string> KnownBranches => _branches?.Known(_repository.Url) ?? [];
 
     [Category("Repositório")]
     [Description(

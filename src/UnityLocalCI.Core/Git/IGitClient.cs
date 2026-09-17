@@ -21,6 +21,13 @@ public interface IGitClient
 
     /// <summary>reset --hard no sha, clean preservando o cache do Unity e lfs pull quando aplicavel.</summary>
     Task CheckoutAsync(GitContext context, string sha, CancellationToken ct);
+
+    /// <summary>
+    /// Branches que existem no remoto, em ordem alfabetica. Serve para a tela de
+    /// configuracao oferecer a lista em vez de esperar o nome digitado — nome de
+    /// branch errado so falha na primeira build, e falha parecendo outra coisa.
+    /// </summary>
+    Task<IReadOnlyList<string>> ListRemoteBranchesAsync(GitContext context, CancellationToken ct);
 }
 
 /// <summary>Dados por invocacao. O PAT circula aqui e nunca e persistido.</summary>

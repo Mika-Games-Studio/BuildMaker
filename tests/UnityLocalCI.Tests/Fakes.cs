@@ -95,6 +95,11 @@ public sealed class FakeGitClient : IGitClient
         CheckedOut.Add(sha);
         return Task.CompletedTask;
     }
+
+    public List<string> RemoteBranches { get; } = ["HML", "main"];
+
+    public Task<IReadOnlyList<string>> ListRemoteBranchesAsync(GitContext context, CancellationToken ct)
+        => Task.FromResult<IReadOnlyList<string>>(RemoteBranches);
 }
 
 public sealed class RecordingScheduler : IBuildScheduler

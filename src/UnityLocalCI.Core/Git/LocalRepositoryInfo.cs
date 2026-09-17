@@ -32,6 +32,57 @@ public static class LocalRepositoryInfo
             Branch: ReadBranch(Path.Combine(git, "HEAD")));
     }
 
+    /// <summary>
+    /// Branches que o clone local ja conhece, lidas dos refs no disco.
+    ///
+    /// Serve de resposta imediata enquanto a consulta ao servidor nao volta, e
+    /// de unica resposta quando nao ha rede ou credencial. Le tanto os refs
+    /// soltos quanto o packed-refs, porque o git compacta os dois formatos sem
+    /// avisar.
+    /// </summary>
+    public static IReadOnlyList<string> ReadKnownBranches(string? folder)
+    {
+        var git = LocateGitFolder(folder);
+        if (git is null) return [];
+
+        var branches = new HashSet<string>(StringComparer.Ordinal);
+
+        try
+        {
+            var remotos = Path.Combine(git, "refs", "remotes", "origin");
+            if (Directory.Exists(remotos))
+            {
+                foreach (var arquivo in Directory.EnumerateFiles(remotos, "*", SearchOption.AllDirectories))
+                {
+                    var nome = Path.GetRelativePath(remotos, arquivo).Replace('\\', '/');
+
+                    // origin/HEAD e um apelido para a branch padrao, nao uma branch.
+                    if (nome is not "HEAD") branches.Add(nome);
+                }
+            }
+
+            var packed = Path.Combine(git, "packed-refs");
+            if (File.Exists(packed))
+            {
+                foreach (var linha in File.ReadLines(packed))
+                {
+                    const string prefixo = "refs/remotes/origin/";
+                    var indice = linha.IndexOf(prefixo, StringComparison.Ordinal);
+                    if (indice < 0) continue;
+
+                    var nome = linha[(indice + prefixo.Length)..].Trim();
+                    if (nome.Length > 0 && nome != "HEAD") branches.Add(nome);
+                }
+            }
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return [];
+        }
+
+        return branches.OrderBy(b => b, StringComparer.OrdinalIgnoreCase).ToArray();
+    }
+
     private static string? LocateGitFolder(string? folder)
     {
         if (string.IsNullOrWhiteSpace(folder)) return null;

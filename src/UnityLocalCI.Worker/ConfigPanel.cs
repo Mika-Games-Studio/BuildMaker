@@ -18,6 +18,7 @@ public sealed class ConfigPanel : UserControl
     private readonly string _configPath;
     private readonly HostController _controller;
     private readonly ICredentialStore _credentials = new WindowsCredentialStore();
+    private readonly BranchCatalog _branches;
 
     private readonly PropertyGrid _schedulerGrid = NewPropertyGrid();
     private readonly PropertyGrid _projectGrid = NewPropertyGrid();
@@ -39,6 +40,7 @@ public sealed class ConfigPanel : UserControl
     {
         _configPath = configPath;
         _controller = controller;
+        _branches = new BranchCatalog(_credentials);
 
         BuildLayout();
         Reload();
@@ -92,9 +94,24 @@ public sealed class ConfigPanel : UserControl
         _projectList.SelectedIndexChanged += (_, _) => ShowSelectedProject();
 
         // Escolher uma pasta pode preencher outro campo — a versao do editor sai
-        // do workspace. Sem este refresh, o valor novo só apareceria ao trocar
-        // de projeto e voltar.
-        _projectGrid.PropertyValueChanged += (_, _) => { _projectGrid.Refresh(); RefreshProjectList(); };
+        // do workspace. Aqui o Refresh e seguro: este evento so dispara DEPOIS
+        // de o valor ter sido confirmado.
+        _projectGrid.PropertyValueChanged += (_, e) =>
+        {
+            _projectGrid.Refresh();
+            RefreshProjectList();
+
+            // Trocou a URL ou a credencial: a lista de branches da anterior nao
+            // vale mais.
+            var propriedade = e.ChangedItem?.PropertyDescriptor?.Name;
+            if (propriedade is nameof(ProjectView.Url) or nameof(ProjectView.PatCredentialName)
+                && SelectedProject() is { } projeto)
+            {
+                _branches.EnsureLoaded(projeto, force: true);
+            }
+        };
+
+        _branches.Updated += OnBranchesLoaded;
 
         var listaCartao = WrapInCard(_projectList);
         listaCartao.Controls.Add(listaBotoes);
@@ -187,9 +204,94 @@ public sealed class ConfigPanel : UserControl
     private void ShowSelectedProject()
     {
         var index = _projectList.SelectedIndex;
-        _projectGrid.SelectedObject = index >= 0 && index < _options.Projects.Count
-            ? new ProjectView(_options.Projects[index])
-            : null;
+
+        if (index < 0 || index >= _options.Projects.Count)
+        {
+            _projectGrid.SelectedObject = null;
+            return;
+        }
+
+        var project = _options.Projects[index];
+        _projectGrid.SelectedObject = new ProjectView(project, _branches);
+
+        // A lista de branches e buscada em segundo plano; quando o usuario abrir
+        // o dropdown, ela ja estara la. Nada aqui espera pela rede.
+        _branches.EnsureLoaded(project);
+        ReportBranches(project.Repository?.Url);
+    }
+
+    /// <summary>
+    /// Diz em que pe esta a lista de branches do repositorio selecionado.
+    ///
+    /// E chamado tanto ao selecionar o projeto quanto quando a consulta termina:
+    /// a carga costuma acabar antes de alguem abrir a pagina de configuracao, e
+    /// so o aviso de chegada deixaria a tela muda justamente no caso normal.
+    /// </summary>
+    private void ReportBranches(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return;
+
+        // Nao atropela uma mensagem de gravacao ou de erro, que importam mais —
+        // mas substitui livremente o proprio aviso anterior sobre branches.
+        if (_problems.Text.Length > 0 && !_branchMessage) return;
+
+        if (_branches.IsLoading(url))
+        {
+            Report("Consultando as branches de " + url + "...", problema: false, sobreBranches: true);
+            return;
+        }
+
+        var quantas = _branches.Known(url).Count;
+
+        Report(
+            quantas == 0
+                ? "Não foi possível listar as branches de " + url +
+                  ". Confira a URL e a credencial — dá para digitar o nome da branch à mão."
+                : $"{quantas} branch(es) no dropdown do campo Branch.",
+            problema: quantas == 0,
+            sobreBranches: true);
+    }
+
+    /// <summary>
+    /// A busca das branches costuma terminar antes de alguem abrir esta pagina —
+    /// e ate antes de ela ter um handle, quando o aviso de chegada nao tem para
+    /// onde ir. Entao o estado e reavaliado toda vez que a pagina aparece.
+    /// </summary>
+    protected override void OnVisibleChanged(EventArgs e)
+    {
+        base.OnVisibleChanged(e);
+
+        if (Visible) ReportBranches(SelectedProject()?.Repository?.Url);
+    }
+
+    private ProjectOptions? SelectedProject()
+    {
+        var index = _projectList.SelectedIndex;
+        return index >= 0 && index < _options.Projects.Count ? _options.Projects[index] : null;
+    }
+
+    /// <summary>
+    /// Chegou a lista de branches de um repositorio, numa thread do pool.
+    ///
+    /// A grade nao e atualizada aqui de proposito: o dropdown pergunta a lista
+    /// na hora em que e aberto, e um Refresh no meio de uma digitacao jogaria
+    /// fora o que estivesse sendo digitado. O que aparece e so um aviso, e so
+    /// quando nao ha outra mensagem mais importante na tela.
+    /// </summary>
+    private void OnBranchesLoaded(string url)
+    {
+        if (!IsHandleCreated) return;
+
+        try
+        {
+            BeginInvoke(() =>
+            {
+                if (_branches.IsLoading(url)) return;
+                ReportBranches(url);
+            });
+        }
+        catch (ObjectDisposedException) { /* janela fechando */ }
+        catch (InvalidOperationException) { /* handle indo embora */ }
     }
 
     /// <summary>
@@ -334,7 +436,7 @@ public sealed class ConfigPanel : UserControl
     /// A mesma linha diz as duas coisas, entao a cor precisa acompanhar: sucesso
     /// escrito em vermelho ensina o usuario a ignorar o vermelho.
     /// </summary>
-    private void Report(string text, bool problema)
+    private void Report(string text, bool problema, bool sobreBranches = false)
     {
         _problems.Text = text;
         _problems.ForeColor = problema ? Theme.Danger : Theme.Success;
@@ -342,7 +444,17 @@ public sealed class ConfigPanel : UserControl
         // Escondida quando nao ha o que dizer: uma faixa vazia de 60 pixels
         // entre o conteudo e os botoes so faz a tela parecer desalinhada.
         _problems.Visible = text.Length > 0;
+
+        _branchMessage = sobreBranches;
     }
+
+    /// <summary>
+    /// Verdadeiro quando o que esta escrito na linha de mensagens foi posto pela
+    /// propria busca de branches. Sem isso, o "Consultando..." bloquearia o
+    /// resultado que vem logo depois — a mensagem ficaria parada em "consultando"
+    /// para sempre.
+    /// </summary>
+    private bool _branchMessage;
 
     private void OpenInEditor()
     {
