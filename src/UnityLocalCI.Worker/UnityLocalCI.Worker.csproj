@@ -1,5 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <ApplicationIcon>unitylocalci.ico</ApplicationIcon>
+  </PropertyGroup>
+  <PropertyGroup>
     <!-- WinExe: sem janela de console atras da interface. O modo servico nao
          precisa de console, e a janela tem a aba de log ao vivo. -->
     <OutputType>WinExe</OutputType>
@@ -14,6 +17,9 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\UnityLocalCI.Core\UnityLocalCI.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="unitylocalci.ico" />
   </ItemGroup>
   <ItemGroup>
     <None Update="appsettings.json" CopyToOutputDirectory="PreserveNewest" />

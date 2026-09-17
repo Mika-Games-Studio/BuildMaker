@@ -40,7 +40,58 @@ O `.ulf` resultante fica em `C:\ProgramData\Unity\`, com escopo de máquina, ent
 
 ## Instalação
 
-### 1. Compilar
+### Instalar em outra máquina
+
+Gere o pacote uma vez:
+
+```bash
+powershell -ExecutionPolicy Bypass -File tools\publicar.ps1
+```
+
+Isso roda os testes, publica um **executável único e self-contained** (~51 MB) e gera o `UnityLocalCI.zip`. O executável carrega o próprio runtime .NET dentro dele: quem receber não precisa instalar nada, e some de vez o problema do .NET que fica só no perfil de um usuário.
+
+Na máquina de destino:
+
+```bash
+powershell -ExecutionPolicy Bypass -File tools\instalar.ps1
+```
+
+Ou direto de uma release, sem baixar nada à mão:
+
+```bash
+powershell -ExecutionPolicy Bypass -File tools\instalar.ps1 -DeUrl https://.../UnityLocalCI.zip
+```
+
+Se a release for privada, acrescente `-Token <PAT>`.
+
+O instalador **não pede administrador**. Ele coloca os arquivos em `%LOCALAPPDATA%\UnityLocalCI`, cria atalhos no menu Iniciar e na área de trabalho, liga o início automático com o Windows e abre o app. Uma atualização por cima **preserva o `appsettings.json`** existente.
+
+Para desinstalar:
+
+```bash
+powershell -ExecutionPolicy Bypass -File tools\instalar.ps1 -Desinstalar
+```
+
+Isso remove os arquivos, os atalhos e o início automático. **Não** apaga o estado, os logs nem os artefatos em `C:\ci\`.
+
+### Como o app se comporta
+
+| Ação | O que acontece |
+|---|---|
+| Abrir o atalho | A janela abre, com o serviço rodando dentro |
+| **Fechar no X** | A janela some, o ícone fica na bandeja e **as builds continuam** |
+| Minimizar | Mesma coisa: vai para a bandeja |
+| Clicar no ícone da bandeja | A janela volta |
+| Botão direito no ícone | Menu com **Abrir**, **Iniciar com o Windows** e **Sair** |
+| **Sair** | Aviso de que as builds param, e encerra de verdade |
+
+Na primeira vez que a janela se esconde, um balão explica que o programa continua rodando — um app que some da barra de tarefas sem dizer nada parece ter sido encerrado.
+
+> **O ícone vai para a área de transbordo.** O Windows 11 esconde ícones novos atrás do `^` na bandeja. Para fixá-lo ao lado do relógio, arraste-o para fora do painel do `^`, ou vá em *Configurações → Personalização → Barra de tarefas → Outros ícones da bandeja do sistema*.
+
+> **Início automático ≠ serviço.** O atalho de início automático abre o app quando **você** faz login. Para o CI rodar com a máquina ligada e ninguém logado, registre-o como serviço do Windows — ver [Windows Service](#windows-service). Os dois podem conviver: o serviço constrói, e a janela é só para acompanhar.
+
+### Compilar a partir do código
 
 ```bash
 dotnet build -c Release

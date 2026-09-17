@@ -63,6 +63,7 @@ static int RunWindow()
 
     using var form = new MainForm(controller, liveLog, configPath);
     using var tray = new TrayPresence(form, controller);
+    form.Tray = tray;
 
     // O host sobe junto com a janela. Se a configuracao estiver invalida, ele
     // nao sobe e a janela mostra a lista de itens a corrigir, em vez de o
@@ -75,84 +76,3 @@ static int RunWindow()
     return 0;
 }
 
-/// <summary>
-/// Icone na bandeja. Fechar a janela pelo X a esconde: o servico continua
-/// construindo, que e o que se espera de um CI. Sair de verdade e so pelo menu
-/// da bandeja, e ai o aviso de que as builds param e explicito.
-/// </summary>
-internal sealed class TrayPresence : IDisposable
-{
-    private readonly NotifyIcon _icon;
-    private readonly Form _form;
-    private readonly HostController _controller;
-
-    public TrayPresence(Form form, HostController controller)
-    {
-        _form = form;
-        _controller = controller;
-
-        var menu = new ContextMenuStrip();
-        menu.Items.Add("Abrir", null, (_, _) => Show());
-        menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Sair", null, (_, _) => Exit());
-
-        _icon = new NotifyIcon
-        {
-            Icon = SystemIcons.Application,
-            Text = "UnityLocalCI",
-            Visible = true,
-            ContextMenuStrip = menu,
-        };
-
-        _icon.DoubleClick += (_, _) => Show();
-        _controller.StateChanged += UpdateTooltip;
-
-        UpdateTooltip();
-    }
-
-    private void Show()
-    {
-        _form.Show();
-        _form.WindowState = FormWindowState.Normal;
-        _form.Activate();
-    }
-
-    private void Exit()
-    {
-        if (_controller.State == HostState.Rodando)
-        {
-            var resposta = MessageBox.Show(
-                _form,
-                "Sair encerra o servico: nenhuma build sera disparada enquanto o programa estiver fechado.\n\n" +
-                "Para o CI rodar sem a janela aberta, registre-o como servico do Windows com tools\\install-service.ps1.\n\n" +
-                "Sair mesmo assim?",
-                "UnityLocalCI", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
-
-            if (resposta != DialogResult.Yes) return;
-        }
-
-        _icon.Visible = false;
-        Application.Exit();
-    }
-
-    private void UpdateTooltip()
-    {
-        var texto = _controller.State switch
-        {
-            HostState.Rodando => "UnityLocalCI — em execucao",
-            HostState.Iniciando => "UnityLocalCI — iniciando",
-            HostState.Parado => "UnityLocalCI — parado",
-            _ => "UnityLocalCI — falhou ao iniciar",
-        };
-
-        // O NotifyIcon trunca em 63 caracteres e lanca acima disso.
-        _icon.Text = texto.Length > 63 ? texto[..63] : texto;
-    }
-
-    public void Dispose()
-    {
-        _controller.StateChanged -= UpdateTooltip;
-        _icon.Visible = false;
-        _icon.Dispose();
-    }
-}

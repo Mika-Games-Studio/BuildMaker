@@ -45,6 +45,16 @@ public sealed class MainForm : Form
 
     private long? _selectedBuildId;
 
+    /// <summary>
+    /// Atribuida logo apos a construcao: a bandeja precisa da janela e a janela
+    /// dela. Campo e nao propriedade, para o analisador do WinForms nao pedir
+    /// atributos de serializacao de designer num membro que nunca vai ao designer.
+    /// </summary>
+    internal TrayPresence? Tray;
+
+    /// <summary>Marcado pela bandeja antes de sair, para o fechamento nao ser escondido.</summary>
+    internal bool ExitRequested;
+
     public MainForm(HostController controller, LiveLog liveLog, string configPath)
     {
         _controller = controller;
@@ -53,6 +63,7 @@ public sealed class MainForm : Form
         _configPanel = new ConfigPanel(configPath, controller);
 
         Text = "UnityLocalCI";
+        Icon = AppIcon.Load();
         Width = 1100;
         Height = 700;
         MinimumSize = new Size(820, 520);
@@ -542,12 +553,21 @@ public sealed class MainForm : Form
 
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
-        // Fechar pelo X esconde na bandeja: o servico continua construindo, que
-        // e o comportamento que se espera de um CI.
-        if (e.CloseReason == CloseReason.UserClosing)
+        // A regra e por exclusao, e nao por CloseReason.UserClosing: fechar
+        // esconde SEMPRE, menos quando saimos de proposito pela bandeja ou
+        // quando o Windows esta encerrando. Testar so o UserClosing deixava o
+        // app morrer em qualquer fechamento que chegasse por outro caminho, e
+        // um CI que para de observar sem ninguem pedir e o pior defeito
+        // possivel aqui.
+        var encerrandoDeVerdade = ExitRequested
+            || e.CloseReason is CloseReason.WindowsShutDown
+                            or CloseReason.TaskManagerClosing
+                            or CloseReason.ApplicationExitCall;
+
+        if (!encerrandoDeVerdade)
         {
             e.Cancel = true;
-            Hide();
+            Tray?.HideToTray();
             return;
         }
 
