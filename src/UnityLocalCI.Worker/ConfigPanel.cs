@@ -281,11 +281,28 @@ public sealed class ConfigPanel : UserControl
 
     // ------------------------------------------------------------------ gravar
 
+    /// <summary>
+    /// Confirma o que esta sendo digitado antes de gravar.
+    ///
+    /// O PropertyGrid so escreve o valor no objeto quando a celula perde o foco.
+    /// Aqui havia um Refresh() com a intencao contraria: Refresh recarrega a
+    /// grade a partir do objeto e JOGA FORA o que foi digitado. O efeito era
+    /// gravar — ou reprovar — o valor antigo, com a tela mostrando o novo.
+    ///
+    /// Tirar o foco e o que confirma a edicao.
+    /// </summary>
+    private void CommitPendingEdits()
+    {
+        var form = FindForm();
+        if (form is null) return;
+
+        if (_schedulerGrid.ContainsFocus || _projectGrid.ContainsFocus)
+            form.ActiveControl = null;
+    }
+
     private void Save(bool restart)
     {
-        // O PropertyGrid pode estar com uma celula em edicao.
-        _schedulerGrid.Refresh();
-        _projectGrid.Refresh();
+        CommitPendingEdits();
 
         var problemas = ConfigFile.Save(_configPath, _options, _credentials);
 

@@ -129,6 +129,45 @@ public class ProjectViewTests : IDisposable
         Assert.Equal(4, view.MaxConcurrentBuilds);
     }
 
+    /// <summary>
+    /// Espaco sobrando e invisivel na tela e quebra em silencio: o nome com
+    /// espaco no fim nao e encontrado no cofre, e a mensagem de erro passa a
+    /// parecer mentira, porque na tela o nome esta certo.
+    /// </summary>
+    [Theory]
+    [InlineData("  UnityLocalCI_GitHubPat  ", "UnityLocalCI_GitHubPat")]
+    [InlineData("   ", null)]
+    [InlineData("", null)]
+    public void Nome_da_credencial_e_normalizado(string digitado, string? esperado)
+    {
+        var projeto = new ProjectOptions { Name = "Jogo" };
+
+        _ = new ProjectView(projeto) { PatCredentialName = digitado };
+
+        Assert.Equal(esperado, projeto.Repository!.PatCredentialName);
+    }
+
+    [Fact]
+    public void Caminhos_e_nomes_tambem_perdem_o_espaco_sobrando()
+    {
+        var projeto = new ProjectOptions();
+
+        _ = new ProjectView(projeto)
+        {
+            Name = "  Crash  ",
+            Url = " https://github.com/OPAGames/CrashUnity.git ",
+            Branch = " crash-aviaturbo-hml ",
+            WorkspacePath = @"  C:\ci\workspace\Crash  ",
+            ArtifactFolder = @"  D:\builds\crash  ",
+        };
+
+        Assert.Equal("Crash", projeto.Name);
+        Assert.Equal("https://github.com/OPAGames/CrashUnity.git", projeto.Repository!.Url);
+        Assert.Equal("crash-aviaturbo-hml", projeto.Repository.Branch);
+        Assert.Equal(@"C:\ci\workspace\Crash", projeto.Repository.WorkspacePath);
+        Assert.Equal(@"D:\builds\crash", projeto.Publishing!.ArtifactFolder);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_raiz)) Directory.Delete(_raiz, recursive: true);

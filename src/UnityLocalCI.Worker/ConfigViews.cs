@@ -6,6 +6,25 @@ using UnityLocalCI.Core.Unity;
 namespace UnityLocalCI.App;
 
 /// <summary>
+/// Normalizacao do que e digitado nas telas de configuracao.
+///
+/// Espaco sobrando e invisivel e quebra tudo em silencio: um nome de credencial
+/// colado com espaco no fim nao e encontrado no cofre, e a mensagem resultante
+/// parece uma mentira — ela diz que a credencial nao existe, com o nome certo na
+/// tela.
+/// </summary>
+internal static class Texto
+{
+    public static string Limpo(string? value) => value?.Trim() ?? "";
+
+    public static string? OuNulo(string? value)
+    {
+        var texto = value?.Trim();
+        return string.IsNullOrEmpty(texto) ? null : texto;
+    }
+}
+
+/// <summary>
 /// A aba Geral: fila, estado e os valores que todos os projetos herdam.
 ///
 /// Existe por dois motivos. O primeiro e que os caminhos ganham caixa de
@@ -63,7 +82,7 @@ public sealed class GeneralView(CiOptions options)
     public string? GlobalStatusFile
     {
         get => _scheduler.GlobalStatusFile;
-        set => _scheduler.GlobalStatusFile = string.IsNullOrWhiteSpace(value) ? null : value;
+        set => _scheduler.GlobalStatusFile = Texto.OuNulo(value);
     }
 
     [Category("Estado e logs")]
@@ -72,7 +91,7 @@ public sealed class GeneralView(CiOptions options)
     public string DatabasePath
     {
         get => _state.DatabasePath;
-        set => _state.DatabasePath = value;
+        set => _state.DatabasePath = Texto.Limpo(value);
     }
 
     [Category("Estado e logs")]
@@ -81,7 +100,7 @@ public sealed class GeneralView(CiOptions options)
     public string LogFolder
     {
         get => _state.LogFolder;
-        set => _state.LogFolder = value;
+        set => _state.LogFolder = Texto.Limpo(value);
     }
 
     // ------------------------------------------------------ padroes herdados
@@ -92,7 +111,7 @@ public sealed class GeneralView(CiOptions options)
     public string? StagingFolder
     {
         get => _publishing.StagingFolder;
-        set => _publishing.StagingFolder = string.IsNullOrWhiteSpace(value) ? null : value;
+        set => _publishing.StagingFolder = Texto.OuNulo(value);
     }
 
     [Category("Padrões dos projetos")]
@@ -100,7 +119,7 @@ public sealed class GeneralView(CiOptions options)
     public string? EditorVersion
     {
         get => _unity.EditorVersion;
-        set => _unity.EditorVersion = string.IsNullOrWhiteSpace(value) ? null : value;
+        set => _unity.EditorVersion = Texto.OuNulo(value);
     }
 
     [Category("Padrões dos projetos")]
@@ -108,7 +127,7 @@ public sealed class GeneralView(CiOptions options)
     public string? BuildTarget
     {
         get => _unity.BuildTarget;
-        set => _unity.BuildTarget = string.IsNullOrWhiteSpace(value) ? null : value;
+        set => _unity.BuildTarget = Texto.OuNulo(value);
     }
 }
 
@@ -167,7 +186,7 @@ public sealed class ProjectView
     public string Name
     {
         get => _project.Name;
-        set => _project.Name = value;
+        set => _project.Name = Texto.Limpo(value);
     }
 
     [Category("Projeto")]
@@ -183,7 +202,7 @@ public sealed class ProjectView
     public string Url
     {
         get => _repository.Url;
-        set => _repository.Url = value;
+        set => _repository.Url = Texto.Limpo(value);
     }
 
     [Category("Repositório")]
@@ -191,7 +210,7 @@ public sealed class ProjectView
     public string Branch
     {
         get => _repository.Branch;
-        set => _repository.Branch = value;
+        set => _repository.Branch = Texto.Limpo(value);
     }
 
     [Category("Repositório")]
@@ -205,11 +224,11 @@ public sealed class ProjectView
         get => _repository.WorkspacePath;
         set
         {
-            _repository.WorkspacePath = value;
+            _repository.WorkspacePath = Texto.Limpo(value);
 
             // O projeto no disco vale mais que o que estava digitado: buildar na
             // versao errada produz um artefato que parece certo e nao e.
-            var detectada = Detect(value);
+            var detectada = Detect(_repository.WorkspacePath);
             if (detectada is not null) EditorVersion = detectada;
         }
     }
@@ -219,7 +238,7 @@ public sealed class ProjectView
     public string? PatCredentialName
     {
         get => _repository.PatCredentialName;
-        set => _repository.PatCredentialName = string.IsNullOrWhiteSpace(value) ? null : value;
+        set => _repository.PatCredentialName = Texto.OuNulo(value);
     }
 
     [Category("Unity")]
@@ -266,7 +285,7 @@ public sealed class ProjectView
     public string? ArtifactFolder
     {
         get => _publishing.ArtifactFolder;
-        set => _publishing.ArtifactFolder = value;
+        set => _publishing.ArtifactFolder = Texto.OuNulo(value);
     }
 
     [Category("Publicação")]
@@ -275,7 +294,7 @@ public sealed class ProjectView
     public string? ManualTriggerFile
     {
         get => _project.ManualTriggerFile;
-        set => _project.ManualTriggerFile = string.IsNullOrWhiteSpace(value) ? null : value;
+        set => _project.ManualTriggerFile = Texto.OuNulo(value);
     }
 
     public override string ToString() => _project.Name;
