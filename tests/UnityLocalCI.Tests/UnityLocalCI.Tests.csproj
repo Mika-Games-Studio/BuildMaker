@@ -1,6 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <IsPackable>false</IsPackable>
+    <!-- A janela entra nos testes por causa das telas de configuracao: o que
+         elas fazem de util (preencher a versao do Unity sozinha, abrir caixa de
+         pasta em vez de campo de texto) nao aparece numa captura de tela. -->
+    <UseWindowsForms>true</UseWindowsForms>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
@@ -10,5 +14,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\UnityLocalCI.Core\UnityLocalCI.Core.csproj" />
+    <ProjectReference Include="..\..\src\UnityLocalCI.Worker\UnityLocalCI.Worker.csproj" />
   </ItemGroup>
 </Project>

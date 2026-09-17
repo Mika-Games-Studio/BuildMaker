@@ -111,6 +111,7 @@ public sealed class MainForm : Form
         _pages.Add(BuildProjectsPage());
         _pages.Add(BuildBuildsPage());
         _pages.Add(BuildServiceLogPage());
+        _pages.Add(BuildTutorialPage());
         _pages.Add(BuildConfigPage());
 
         foreach (var page in _pages)
@@ -133,6 +134,7 @@ public sealed class MainForm : Form
         rail.AddItem("Projetos", NavGlyph.Projects);
         rail.AddItem("Builds", NavGlyph.Builds);
         rail.AddItem("Log do serviço", NavGlyph.Log);
+        rail.AddItem("Tutorial", NavGlyph.Tutorial);
         rail.AddItem("Configuração", NavGlyph.Settings);
         rail.SelectionChanged += ShowPage;
 
@@ -246,6 +248,15 @@ public sealed class MainForm : Form
         header.Actions.Controls.Add(limpar);
 
         return NewPage(header, NewCard(_serviceLog));
+    }
+
+    private static Panel BuildTutorialPage()
+    {
+        var header = new PageHeader(
+            "Tutorial",
+            "Do zero até a primeira build: instalar, gravar o PAT e vincular um projeto.");
+
+        return NewPage(header, new TutorialPage());
     }
 
     private Panel BuildConfigPage()

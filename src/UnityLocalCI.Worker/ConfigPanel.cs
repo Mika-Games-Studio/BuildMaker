@@ -66,21 +66,35 @@ public sealed class ConfigPanel : UserControl
             BackColor = Theme.Canvas,
         };
 
+        // Duas fileiras: a coluna da lista e estreita, e numa fileira so o
+        // ultimo botao saia da area visivel sem deixar rastro.
         var listaBotoes = new FlowLayoutPanel
         {
             Dock = DockStyle.Bottom,
-            Height = 40,
+            Height = 82,
             Padding = new Padding(0, 8, 0, 0),
             BackColor = Theme.Surface,
         };
 
-        var adicionar = new PillButton("Adicionar") { Width = 96, Backdrop = Theme.Surface };
-        var remover = new PillButton("Remover", ButtonKind.Ghost) { Width = 92, Backdrop = Theme.Surface };
+        var vincular = new PillButton("Vincular projeto Unity", ButtonKind.Primary)
+        {
+            Width = 168,
+            Backdrop = Theme.Surface,
+        };
+        var adicionar = new PillButton("Vazio") { Width = 76, Backdrop = Theme.Surface, Margin = new Padding(0, 6, 8, 0) };
+        var remover = new PillButton("Remover", ButtonKind.Ghost) { Width = 92, Backdrop = Theme.Surface, Margin = new Padding(0, 6, 8, 0) };
+
+        vincular.Click += (_, _) => LinkUnityProject();
         adicionar.Click += (_, _) => AddProject();
         remover.Click += (_, _) => RemoveProject();
-        listaBotoes.Controls.AddRange([adicionar, remover]);
+        listaBotoes.Controls.AddRange([vincular, adicionar, remover]);
 
         _projectList.SelectedIndexChanged += (_, _) => ShowSelectedProject();
+
+        // Escolher uma pasta pode preencher outro campo — a versao do editor sai
+        // do workspace. Sem este refresh, o valor novo só apareceria ao trocar
+        // de projeto e voltar.
+        _projectGrid.PropertyValueChanged += (_, _) => { _projectGrid.Refresh(); RefreshProjectList(); };
 
         var listaCartao = WrapInCard(_projectList);
         listaCartao.Controls.Add(listaBotoes);
@@ -147,7 +161,7 @@ public sealed class ConfigPanel : UserControl
             Report("Não foi possível ler o arquivo: " + exception.Message, problema: true);
         }
 
-        _schedulerGrid.SelectedObject = _options.Scheduler;
+        _schedulerGrid.SelectedObject = new GeneralView(_options);
         RefreshProjectList();
     }
 
@@ -176,6 +190,63 @@ public sealed class ConfigPanel : UserControl
         _projectGrid.SelectedObject = index >= 0 && index < _options.Projects.Count
             ? new ProjectView(_options.Projects[index])
             : null;
+    }
+
+    /// <summary>
+    /// Cadastra um projeto a partir de uma pasta que ja existe na maquina.
+    ///
+    /// A pasta escolhida serve so para LER: dela saem a URL, a branch e a versao
+    /// do editor. O workspace do CI e outro, proprio, porque o pipeline apaga o
+    /// que nao esta commitado antes de cada build — apontar para a pasta de
+    /// trabalho de alguem destruiria o que estivesse em andamento.
+    /// </summary>
+    private void LinkUnityProject()
+    {
+        using var dialog = new FolderBrowserDialog
+        {
+            UseDescriptionForTitle = true,
+            Description = "Escolha a pasta do projeto Unity (a que tem Assets e ProjectSettings)",
+            ShowNewFolderButton = false,
+        };
+
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+
+        var rascunho = ProjectDraft.FromFolder(dialog.SelectedPath, _options.Projects);
+
+        if (!rascunho.Recognized)
+        {
+            MessageBox.Show(
+                this,
+                "Essa pasta não tem ProjectSettings\\ProjectVersion.txt nem um repositório Git." +
+                Environment.NewLine + Environment.NewLine +
+                "Escolha a pasta raiz do projeto Unity, ou use 'Vazio' para preencher tudo à mão.",
+                "UnityLocalCI", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        var projeto = rascunho.Project;
+
+        _options.Projects.Add(projeto);
+        RefreshProjectList();
+        _projectList.SelectedIndex = _options.Projects.Count - 1;
+
+        var resumo = new List<string>
+        {
+            "Nome: " + projeto.Name,
+            "Repositório: " + (rascunho.Repository?.Url is { Length: > 0 } url ? url : "(não encontrado — preencha)"),
+            "Branch: " + (rascunho.Repository?.Branch ?? "(HEAD solto — confira)"),
+            "Versão do Unity: " + (rascunho.EditorVersion ?? "(não encontrada — preencha)"),
+            "Workspace do CI: " + projeto.Repository.WorkspacePath,
+        };
+
+        MessageBox.Show(
+            this,
+            "Projeto vinculado:" + Environment.NewLine + Environment.NewLine +
+            string.Join(Environment.NewLine, resumo.Select(l => "  " + l)) + Environment.NewLine + Environment.NewLine +
+            "O CI não constrói dentro da pasta que você escolheu: ele clona no workspace acima." +
+            Environment.NewLine + Environment.NewLine +
+            "Falta escolher a pasta de destino (ArtifactFolder) e marcar Enabled como True. Depois, Salvar e reiniciar.",
+            "UnityLocalCI", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 
     private void AddProject()
@@ -266,118 +337,7 @@ public sealed class ConfigPanel : UserControl
     {
         Dock = DockStyle.Fill,
         ToolbarVisible = false,
-        PropertySort = PropertySort.NoSort,
+        PropertySort = PropertySort.Categorized,
         HelpVisible = true,
     };
-}
-
-/// <summary>
-/// Achata o projeto para o PropertyGrid: sem isto, Repository, Unity e
-/// Publishing apareceriam como sub-objetos que o usuario precisa expandir um a
-/// um, e os campos herdados de Defaults nao teriam explicacao nenhuma.
-/// </summary>
-public sealed class ProjectView
-{
-    private readonly ProjectOptions _project;
-    private readonly RepositoryOptions _repository;
-    private readonly PublishingOptions _publishing;
-
-    public ProjectView(ProjectOptions project)
-    {
-        _project = project;
-
-        // Guardados em campos nao-anulaveis: as sobrescritas por projeto sao
-        // opcionais na configuracao, mas a tela sempre tem onde escrever.
-        _repository = _project.Repository ??= new RepositoryOptions();
-        _publishing = _project.Publishing ??= new PublishingOptions();
-    }
-
-    [System.ComponentModel.Category("Projeto")]
-    [System.ComponentModel.Description("Identifica a fila, o estado e aparece nos arquivos de status. Precisa ser unico.")]
-    public string Name
-    {
-        get => _project.Name;
-        set => _project.Name = value;
-    }
-
-    [System.ComponentModel.Category("Projeto")]
-    [System.ComponentModel.Description("Desligado, o projeto fica na configuracao mas nao e observado nem construido.")]
-    public bool Enabled
-    {
-        get => _project.Enabled;
-        set => _project.Enabled = value;
-    }
-
-    [System.ComponentModel.Category("Repositorio")]
-    public string Url
-    {
-        get => _repository.Url;
-        set => _repository.Url = value;
-    }
-
-    [System.ComponentModel.Category("Repositorio")]
-    [System.ComponentModel.Description("Branch observada. A build dispara quando o HEAD dela muda.")]
-    public string Branch
-    {
-        get => _repository.Branch;
-        set => _repository.Branch = value;
-    }
-
-    [System.ComponentModel.Category("Repositorio")]
-    [System.ComponentModel.Description("Clone dedicado e permanente. Dois projetos nunca podem compartilhar o mesmo caminho: o Unity trava a Library do diretorio.")]
-    public string WorkspacePath
-    {
-        get => _repository.WorkspacePath;
-        set => _repository.WorkspacePath = value;
-    }
-
-    [System.ComponentModel.Category("Repositorio")]
-    [System.ComponentModel.Description("NOME da credencial no Windows Credential Manager, nunca o PAT. Grave o valor com tools\\set-secrets.ps1.")]
-    public string? PatCredentialName
-    {
-        get => _repository.PatCredentialName;
-        set => _repository.PatCredentialName = string.IsNullOrWhiteSpace(value) ? null : value;
-    }
-
-    [System.ComponentModel.Category("Unity")]
-    [System.ComponentModel.Description("Versao exata do editor. Vazio herda de Defaults. Nao e adivinhada: buildar na versao errada produz um artefato que parece certo e nao e.")]
-    public string? EditorVersion
-    {
-        get => _project.Unity?.EditorVersion;
-        set
-        {
-            _project.Unity ??= new UnityOptions();
-            _project.Unity.EditorVersion = string.IsNullOrWhiteSpace(value) ? null : value;
-        }
-    }
-
-    [System.ComponentModel.Category("Unity")]
-    [System.ComponentModel.Description("Vazio herda de Defaults (WebGL).")]
-    public string? BuildTarget
-    {
-        get => _project.Unity?.BuildTarget;
-        set
-        {
-            _project.Unity ??= new UnityOptions();
-            _project.Unity.BuildTarget = string.IsNullOrWhiteSpace(value) ? null : value;
-        }
-    }
-
-    [System.ComponentModel.Category("Publicacao")]
-    [System.ComponentModel.Description("Pasta onde o time pega o zip.")]
-    public string? ArtifactFolder
-    {
-        get => _publishing.ArtifactFolder;
-        set => _publishing.ArtifactFolder = value;
-    }
-
-    [System.ComponentModel.Category("Publicacao")]
-    [System.ComponentModel.Description("Tocar este arquivo enfileira uma build do HEAD atual. O servico o apaga ao consumir.")]
-    public string? ManualTriggerFile
-    {
-        get => _project.ManualTriggerFile;
-        set => _project.ManualTriggerFile = string.IsNullOrWhiteSpace(value) ? null : value;
-    }
-
-    public override string ToString() => _project.Name;
 }

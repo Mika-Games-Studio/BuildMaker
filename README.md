@@ -8,6 +8,85 @@ Aplicação .NET que roda na própria máquina, com janela e ícone na bandeja. 
 
 ---
 
+## Como instalar e executar
+
+Quatro passos, do zero até a primeira build. O mesmo roteiro está **dentro do programa, na página Tutorial** — porque quem instala na máquina de build nem sempre é quem clonou este repositório.
+
+### 1. Gerar o pacote
+
+Na máquina onde está o código, com o [.NET SDK 10](https://dotnet.microsoft.com/download) instalado:
+
+```bash
+powershell -ExecutionPolicy Bypass -File tools\publicar.ps1
+```
+
+Roda os testes, publica um **executável único** de ~51 MB com o runtime .NET dentro dele e gera o `UnityLocalCI.zip`. Quem receber esse arquivo **não precisa instalar .NET nenhum**.
+
+### 2. Instalar
+
+Na máquina de build:
+
+```bash
+powershell -ExecutionPolicy Bypass -File tools\instalar.ps1
+```
+
+Ou, para instalar direto de uma release publicada no GitHub, sem baixar nada à mão (acrescente `-Token <PAT>` se a release for privada):
+
+```bash
+powershell -ExecutionPolicy Bypass -File tools\instalar.ps1 -DeUrl https://.../UnityLocalCI.zip
+```
+
+**Não pede administrador.** Instala em `%LOCALAPPDATA%\UnityLocalCI`, cria atalho no menu Iniciar e na área de trabalho, liga o início automático com o Windows e abre o programa. Uma reinstalação por cima preserva o `appsettings.json`.
+
+### 3. Gravar o token e a licença
+
+O PAT do repositório mora no Gerenciador de Credenciais do Windows; a configuração guarda só o **nome** da credencial. O PAT precisa do escopo de leitura de código.
+
+```bash
+cmdkey /generic:UnityLocalCI_AzureDevOpsPat /user:pat /pass:SEU_PAT_AQUI
+```
+
+A licença do Unity é ativada uma vez por máquina, com escopo de máquina, para valer também quando o CI roda como serviço:
+
+```bash
+unity license activate --serial <SERIAL> --username <USUARIO> --password <SENHA>
+```
+
+### 4. Cadastrar o projeto pela janela
+
+Na página **Configuração → Projetos**, clique em **Vincular projeto Unity** e escolha a pasta do projeto que já existe na máquina. Dela saem sozinhos:
+
+- a **URL** e a **branch**, lidas do `.git` daquele clone;
+- a **versão do editor**, lida do `ProjectSettings/ProjectVersion.txt` do projeto — nunca adivinhada, nunca digitada.
+
+Falta escolher a **pasta de destino**, onde o time pega o zip. Todos os campos de caminho abrem a caixa de seleção do Windows, em vez de esperar o caminho digitado. Depois marque `Enabled` como `True` e use **Salvar e reiniciar**.
+
+> O CI **não constrói dentro da pasta que você escolheu**. Ele clona no workspace dele, que é exclusivo e onde ele apaga o que não estiver commitado antes de cada build. Por isso o workspace sugerido é outro caminho, e não a sua pasta de trabalho.
+
+### Rodar sem instalar
+
+Para experimentar a partir do código, sem gerar pacote:
+
+```bash
+dotnet run --project src/UnityLocalCI.Worker
+```
+
+E, para ver a ferramenta funcionando sem tocar em nenhum projeto Unity real, há um ambiente de teste descartável:
+
+```bash
+powershell -ExecutionPolicy Bypass -File tools\testar-local.ps1
+```
+
+### Desinstalar
+
+```bash
+powershell -ExecutionPolicy Bypass -File tools\instalar.ps1 -Desinstalar
+```
+
+Remove arquivos, atalhos e início automático. **Não** apaga o estado, os logs nem os artefatos em `C:\ci\`.
+
+---
+
 ## Pré-requisitos
 
 | Item | Versão | Como conferir |
@@ -38,43 +117,7 @@ O `.ulf` resultante fica em `C:\ProgramData\Unity\`, com escopo de máquina, ent
 
 ---
 
-## Instalação
-
-### Instalar em outra máquina
-
-Gere o pacote uma vez:
-
-```bash
-powershell -ExecutionPolicy Bypass -File tools\publicar.ps1
-```
-
-Isso roda os testes, publica um **executável único e self-contained** (~51 MB) e gera o `UnityLocalCI.zip`. O executável carrega o próprio runtime .NET dentro dele: quem receber não precisa instalar nada, e some de vez o problema do .NET que fica só no perfil de um usuário.
-
-Na máquina de destino:
-
-```bash
-powershell -ExecutionPolicy Bypass -File tools\instalar.ps1
-```
-
-Ou direto de uma release, sem baixar nada à mão:
-
-```bash
-powershell -ExecutionPolicy Bypass -File tools\instalar.ps1 -DeUrl https://.../UnityLocalCI.zip
-```
-
-Se a release for privada, acrescente `-Token <PAT>`.
-
-O instalador **não pede administrador**. Ele coloca os arquivos em `%LOCALAPPDATA%\UnityLocalCI`, cria atalhos no menu Iniciar e na área de trabalho, liga o início automático com o Windows e abre o app. Uma atualização por cima **preserva o `appsettings.json`** existente.
-
-Para desinstalar:
-
-```bash
-powershell -ExecutionPolicy Bypass -File tools\instalar.ps1 -Desinstalar
-```
-
-Isso remove os arquivos, os atalhos e o início automático. **Não** apaga o estado, os logs nem os artefatos em `C:\ci\`.
-
-### Como o app se comporta
+## Como o app se comporta
 
 | Ação | O que acontece |
 |---|---|
@@ -91,35 +134,7 @@ Na primeira vez que a janela se esconde, um balão explica que o programa contin
 
 > **Início automático ≠ serviço.** O atalho de início automático abre o app quando **você** faz login. Para o CI rodar com a máquina ligada e ninguém logado, registre-o como serviço do Windows — ver [Windows Service](#windows-service). Os dois podem conviver: o serviço constrói, e a janela é só para acompanhar.
 
-### Compilar a partir do código
-
-```bash
-dotnet build -c Release
-```
-
-### 2. Gravar os segredos no Windows Credential Manager
-
-O serviço apenas lê; nada de segredo em arquivo de configuração, log ou URL de remote do Git. A configuração guarda só o **nome** da credencial.
-
-```bash
-cmdkey /generic:UnityLocalCI_AzureDevOpsPat /user:pat /pass:SEU_PAT_AQUI
-```
-
-O PAT precisa do escopo `Code: Read`. Se a credencial referenciada não existir, o serviço recusa subir e diz exatamente qual é e como gravá-la.
-
-### 3. Preencher `appsettings.json`
-
-Todos os placeholders estão listados na seção seguinte. Enquanto houver um `PREENCHER-`, o serviço sobe mas não faz nada de útil.
-
-### 4. Rodar
-
-```bash
-dotnet run --project src/UnityLocalCI.Worker
-```
-
-Isso abre a janela, com o serviço rodando dentro dela.
-
-### A janela
+## A janela
 
 Um executável só, dois modos:
 
@@ -128,14 +143,34 @@ Um executável só, dois modos:
 | `UnityLocalCI.exe` | Abre a janela, com o serviço rodando dentro |
 | `UnityLocalCI.exe --service` | Roda sem interface, para o Windows Service |
 
-A navegação é uma **coluna à esquerda**, com quatro páginas:
+A navegação é uma **coluna à esquerda**, com cinco páginas:
 
 - **Projetos** — estado ao vivo de cada projeto, com botões para construir agora, abrir a pasta de destino, reenviar artefatos pendentes e parar ou iniciar o serviço
 - **Builds** — histórico das últimas 200 builds e o log completo da selecionada
 - **Log do serviço** — o que está acontecendo agora, ao vivo
+- **Tutorial** — o roteiro completo de uso, do instalador à primeira build, com os comandos copiáveis por um clique
 - **Configuração** — edita o `appsettings.json` pela interface, valida antes de gravar e oferece reiniciar o serviço
 
 Cada página tem cabeçalho com as próprias ações, e o rodapé mostra o estado do serviço e os números da fila.
+
+### Cadastrar projeto sem digitar caminho
+
+Na página Configuração, **nenhum caminho precisa ser digitado**: cada campo de pasta ou arquivo abre a caixa de seleção do Windows. Caminho digitado é o tipo de erro que só aparece depois, na hora do clone, do build ou da cópia.
+
+O botão **Vincular projeto Unity** vai além: você aponta a pasta de um projeto que já existe na máquina e ele preenche o cadastro com o que aquele projeto já sabe dizer sobre si mesmo.
+
+| O que é preenchido | De onde vem |
+|---|---|
+| URL do repositório | `.git/config`, remote `origin` (ou o primeiro que houver) |
+| Branch | `.git/HEAD` |
+| **Versão do editor** | `ProjectSettings/ProjectVersion.txt` do projeto |
+| Nome, workspace e arquivo de gatilho | derivados do nome da pasta, seguindo o padrão dos projetos já cadastrados |
+
+A versão do editor também é relida **sempre que o `WorkspacePath` é escolhido**, e a linha *EditorVersion no disco* mostra o que o projeto clonado diz agora — se divergir do campo gravado, a configuração ficou para trás depois de o time subir o projeto para outra versão do Unity. Buildar na versão errada produz um artefato que parece certo e não é, então essa é a única coisa da configuração que nunca é adivinhada.
+
+Os arquivos do Git e o `ProjectVersion.txt` são **lidos direto, sem invocar o `git`**: isso roda na thread da interface, ao lado de uma caixa de diálogo, e um processo externo ali travaria a janela.
+
+> **O workspace nunca é a pasta que você escolheu.** Antes de cada build o pipeline apaga o que não estiver commitado; apontá-lo para a sua pasta de trabalho destruiria o que estivesse em andamento. Por isso o cadastro sugere um caminho próprio, e o projeto entra **desligado** até você conferir.
 
 #### O visual
 

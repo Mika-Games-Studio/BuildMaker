@@ -228,9 +228,12 @@ public static class Theme
                 split.Panel2.BackColor = Canvas;
                 return;
 
+            // A fonte do rotulo nao e tocada: quem criou um titulo escolheu a
+            // fonte de proposito, e sobrescrever aqui achatava o tutorial inteiro
+            // num tamanho so. Sem fonte propria, ele herda a do formulario, que
+            // ja e a do tema.
             case Label label:
                 label.BackColor = BackdropOf(label);
-                label.Font = Ui;
                 return;
 
             default:
