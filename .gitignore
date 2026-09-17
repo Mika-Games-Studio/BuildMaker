@@ -2,3 +2,5 @@ bin/
 obj/
 *.user
 appsettings.local.json
+publicado/
+UnityLocalCI.zip

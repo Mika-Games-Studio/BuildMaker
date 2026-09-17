@@ -4,7 +4,7 @@ using Microsoft.Extensions.Options;
 using UnityLocalCI.Core.Configuration;
 using UnityLocalCI.Core.State;
 
-namespace UnityLocalCI.Worker;
+namespace UnityLocalCI.Core.Hosting;
 
 /// <summary>
 /// Roda antes de scheduler e watchers: cria os diretorios, inicializa o banco e

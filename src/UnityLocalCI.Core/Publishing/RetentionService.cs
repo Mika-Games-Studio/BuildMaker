@@ -47,6 +47,12 @@ public sealed class RetentionService : IRetentionService
             .Select(b => b.Id)
             .ToHashSet();
 
+        // E as mais recentes de qualquer resultado, pelo log. Sem isto, a build
+        // que acabou de falhar seria podada na mesma execucao que a criou, e o
+        // _STATUS.txt mandaria abrir um log que a retencao ja apagou.
+        foreach (var id in recent.OrderByDescending(b => b.Id).Take(keepCount).Select(b => b.Id))
+            keep.Add(id);
+
         var pruned = 0;
 
         foreach (var build in recent.Where(b => !keep.Contains(b.Id)))

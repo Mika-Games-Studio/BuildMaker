@@ -1,4 +1,4 @@
-<#
+﻿<#
     Toca o ManualTriggerFile de cada projeto habilitado.
 
     O scheduler distribui conforme as vagas: tocar N arquivos nao dispara N

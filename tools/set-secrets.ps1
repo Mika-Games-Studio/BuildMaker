@@ -1,4 +1,4 @@
-<#
+﻿<#
     Grava os segredos do UnityLocalCI no Windows Credential Manager.
 
     O servico apenas le. A configuracao guarda so o NOME da credencial, nunca o
