@@ -2,7 +2,7 @@
 
 Serviço de integração contínua que roda inteiramente numa máquina Windows local. Observa a branch de homologação de um ou mais projetos Unity, detecta commits novos, executa o build, compacta o resultado e copia o zip para a pasta de cada projeto.
 
-Sem nuvem, sem servidor HTTP, sem API, sem painel web. A pasta de destino é a interface.
+Aplicação .NET que roda na própria máquina, com janela e ícone na bandeja. Sem nuvem e sem painel web: a pasta de destino continua sendo a interface para quem só quer o artefato.
 
 **Estado atual: as três fases concluídas.** Ver [O que já existe](#o-que-já-existe-e-o-que-falta) ao final.
 
@@ -40,7 +40,58 @@ O `.ulf` resultante fica em `C:\ProgramData\Unity\`, com escopo de máquina, ent
 
 ## Instalação
 
-### 1. Compilar
+### Instalar em outra máquina
+
+Gere o pacote uma vez:
+
+```bash
+powershell -ExecutionPolicy Bypass -File tools\publicar.ps1
+```
+
+Isso roda os testes, publica um **executável único e self-contained** (~51 MB) e gera o `UnityLocalCI.zip`. O executável carrega o próprio runtime .NET dentro dele: quem receber não precisa instalar nada, e some de vez o problema do .NET que fica só no perfil de um usuário.
+
+Na máquina de destino:
+
+```bash
+powershell -ExecutionPolicy Bypass -File tools\instalar.ps1
+```
+
+Ou direto de uma release, sem baixar nada à mão:
+
+```bash
+powershell -ExecutionPolicy Bypass -File tools\instalar.ps1 -DeUrl https://.../UnityLocalCI.zip
+```
+
+Se a release for privada, acrescente `-Token <PAT>`.
+
+O instalador **não pede administrador**. Ele coloca os arquivos em `%LOCALAPPDATA%\UnityLocalCI`, cria atalhos no menu Iniciar e na área de trabalho, liga o início automático com o Windows e abre o app. Uma atualização por cima **preserva o `appsettings.json`** existente.
+
+Para desinstalar:
+
+```bash
+powershell -ExecutionPolicy Bypass -File tools\instalar.ps1 -Desinstalar
+```
+
+Isso remove os arquivos, os atalhos e o início automático. **Não** apaga o estado, os logs nem os artefatos em `C:\ci\`.
+
+### Como o app se comporta
+
+| Ação | O que acontece |
+|---|---|
+| Abrir o atalho | A janela abre, com o serviço rodando dentro |
+| **Fechar no X** | A janela some, o ícone fica na bandeja e **as builds continuam** |
+| Minimizar | Mesma coisa: vai para a bandeja |
+| Clicar no ícone da bandeja | A janela volta |
+| Botão direito no ícone | Menu com **Abrir**, **Iniciar com o Windows** e **Sair** |
+| **Sair** | Aviso de que as builds param, e encerra de verdade |
+
+Na primeira vez que a janela se esconde, um balão explica que o programa continua rodando — um app que some da barra de tarefas sem dizer nada parece ter sido encerrado.
+
+> **O ícone vai para a área de transbordo.** O Windows 11 esconde ícones novos atrás do `^` na bandeja. Para fixá-lo ao lado do relógio, arraste-o para fora do painel do `^`, ou vá em *Configurações → Personalização → Barra de tarefas → Outros ícones da bandeja do sistema*.
+
+> **Início automático ≠ serviço.** O atalho de início automático abre o app quando **você** faz login. Para o CI rodar com a máquina ligada e ninguém logado, registre-o como serviço do Windows — ver [Windows Service](#windows-service). Os dois podem conviver: o serviço constrói, e a janela é só para acompanhar.
+
+### Compilar a partir do código
 
 ```bash
 dotnet build -c Release
@@ -66,9 +117,46 @@ Todos os placeholders estão listados na seção seguinte. Enquanto houver um `P
 dotnet run --project src/UnityLocalCI.Worker
 ```
 
-Isso roda como aplicação de console, que é o modo de conferir a configuração. Para instalar como serviço, ver [Windows Service](#windows-service).
+Isso abre a janela, com o serviço rodando dentro dela.
 
-> **Se o `.exe` reclamar que o .NET não foi encontrado:** o SDK está instalado no perfil do usuário (`%USERPROFILE%\.dotnet`) e o apphost só procura em `C:\Program Files\dotnet`. Rode por `dotnet UnityLocalCI.Worker.dll`, ou defina `DOTNET_ROOT`. Antes de registrar o Windows Service, instale o .NET para toda a máquina.
+### A janela
+
+Um executável só, dois modos:
+
+| Como iniciar | O que acontece |
+|---|---|
+| `UnityLocalCI.exe` | Abre a janela, com o serviço rodando dentro |
+| `UnityLocalCI.exe --service` | Roda sem interface, para o Windows Service |
+
+A navegação é uma **coluna à esquerda**, com quatro páginas:
+
+- **Projetos** — estado ao vivo de cada projeto, com botões para construir agora, abrir a pasta de destino, reenviar artefatos pendentes e parar ou iniciar o serviço
+- **Builds** — histórico das últimas 200 builds e o log completo da selecionada
+- **Log do serviço** — o que está acontecendo agora, ao vivo
+- **Configuração** — edita o `appsettings.json` pela interface, valida antes de gravar e oferece reiniciar o serviço
+
+Cada página tem cabeçalho com as próprias ações, e o rodapé mostra o estado do serviço e os números da fila.
+
+#### O visual
+
+Tema escuro quente, com a paleta em degraus — fundo, superfície, superfície elevada — e **um único destaque**, o coral, reservado para a ação principal, o item de navegação ativo e a build em execução. A profundidade vem dos cartões arredondados com contorno discreto, e não de sombra: o WinForms não desenha sombra de verdade, e uma sombra falsa sobre fundo liso fica pior que nenhuma.
+
+O WinForms não tem tema — cada controle pinta com as cores do sistema —, então:
+
+- os controles próprios (coluna de navegação, botões, cartões, rodapé, seletor segmentado da configuração, lista de projetos) **se desenham por inteiro**, com `TextRenderer` para o texto sair com o mesmo peso do resto do sistema
+- os ícones da navegação são **desenhados em GDI+**, não tirados de uma fonte de símbolos: fonte de ícone que não existe na máquina vira quadradinho, e a lista de símbolos muda entre versões do Windows
+- a barra de título escurece por uma chamada ao **DWM**
+- barras de rolagem, caixas de diálogo e menus de contexto são desenhados pelo Windows, e escurecem por `Application.SetColorMode(SystemColorMode.Dark)` — a API ainda é marcada como experimental, então a chamada é protegida: se um dia ela mudar, o pior caso é essas partes voltarem a ser claras, e o resto da janela não depende dela
+
+Ela não guarda estado próprio: tudo o que mostra vem do mesmo SQLite que o serviço escreve, então nunca discorda do que aconteceu de verdade, e fechá-la não perde nada.
+
+Fechar pelo **X esconde na bandeja** e o serviço continua construindo. Sair de verdade é pelo menu da bandeja, que avisa que as builds param.
+
+> **A janela aberta não substitui o serviço.** Com tudo num executável só, as builds só acontecem enquanto o programa estiver rodando e a sessão do usuário estiver aberta. Para o CI funcionar com a máquina ligada e ninguém logado, registre-o como serviço — ver [Windows Service](#windows-service). Os dois modos usam exatamente os mesmos componentes; o que muda é só quem os hospeda.
+
+> **A página de Configuração edita o `appsettings.json`**, não o `appsettings.local.json`. Se houver um arquivo local sobrescrevendo valores, o que a janela mostra não é o que o serviço está usando.
+
+> **Se o `.exe` reclamar que o .NET não foi encontrado:** o SDK está instalado no perfil do usuário (`%USERPROFILE%\.dotnet`) e o apphost só procura em `C:\Program Files\dotnet`. Rode por `dotnet UnityLocalCI.dll`, ou defina `DOTNET_ROOT`. Antes de registrar o Windows Service, instale o .NET para toda a máquina.
 
 ---
 
@@ -172,7 +260,7 @@ Também não usamos `--format json`: o log é transmitido em tempo real para `lo
 ```
 UnityLocalCI.sln
 ├── src/
-│   ├── UnityLocalCI.Worker/      host, DI, appsettings.json
+│   ├── UnityLocalCI.Worker/      janela, bandeja, modo servico e configuracao
 │   └── UnityLocalCI.Core/
 │       ├── Configuration/        opções tipadas, merge de Defaults, validação
 │       ├── Secrets/              Windows Credential Manager (P/Invoke CredRead)
