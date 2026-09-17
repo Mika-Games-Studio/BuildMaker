@@ -19,6 +19,11 @@
     <ProjectReference Include="..\UnityLocalCI.Core\UnityLocalCI.Core.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <!-- Os auxiliares internos de tempo e caminho sao testados: e neles que mora
+         a protecao contra travamento da janela. -->
+    <InternalsVisibleTo Include="UnityLocalCI.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <EmbeddedResource Include="unitylocalci.ico" />
   </ItemGroup>
   <ItemGroup>

@@ -46,12 +46,33 @@ internal sealed class TutorialPage : Panel
 
     private int LarguraUtil => Math.Max(320, ClientSize.Width - Padding.Horizontal - SystemInformation.VerticalScrollBarWidth);
 
+    private int _larguraAplicada = -1;
+
+    /// <summary>
+    /// Reaplica a largura dos paragrafos, e so quando ela mudou de verdade.
+    ///
+    /// Mexer no MaximumSize dispara layout, o layout pode mudar a altura, a
+    /// altura pode fazer a barra de rolagem aparecer ou sumir, e isso muda a
+    /// largura util — que dispara tudo de novo. Com a guarda, a segunda volta
+    /// nao acontece; sem ela, o laco roda para sempre a 100% de um nucleo, com
+    /// a janela viva mas inutil.
+    /// </summary>
     private void Reajustar()
     {
-        _pilha.MaximumSize = new Size(LarguraUtil, 0);
+        var largura = LarguraUtil;
+        if (largura == _larguraAplicada) return;
 
-        foreach (var paragrafo in _paragrafos)
-            paragrafo.MaximumSize = new Size(LarguraUtil - paragrafo.Margin.Horizontal, 0);
+        _larguraAplicada = largura;
+
+        SuspendLayout();
+        try
+        {
+            _pilha.MaximumSize = new Size(largura, 0);
+
+            foreach (var paragrafo in _paragrafos)
+                paragrafo.MaximumSize = new Size(largura - paragrafo.Margin.Horizontal, 0);
+        }
+        finally { ResumeLayout(performLayout: true); }
     }
 
     // ------------------------------------------------------------- conteudo
@@ -289,15 +310,19 @@ internal sealed class CommandBlock : Control, IPaintsItself
     {
         try
         {
-            Clipboard.SetText(_comando);
+            // Com numero de tentativas explicito: outra aplicacao pode estar
+            // segurando a area de transferencia, e o padrao do WinForms insiste
+            // por cerca de um segundo com a janela parada.
+            Clipboard.SetDataObject(_comando, copy: true, retryTimes: 4, retryDelay: 40);
+
             _copiado = true;
             _voltar.Stop();
             _voltar.Start();
         }
         catch (ExternalException)
         {
-            // Outra aplicacao segurando a area de transferencia: sem aviso, que
-            // um erro modal por causa de um copiar seria pior que o copiar falho.
+            // Area de transferencia ocupada: sem aviso, que um erro modal por
+            // causa de um copiar seria pior que o copiar falho.
         }
 
         Invalidate();

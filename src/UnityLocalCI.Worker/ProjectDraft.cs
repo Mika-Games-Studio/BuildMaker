@@ -25,8 +25,10 @@ public static class ProjectDraft
 
     public static Result FromFolder(string folder, IReadOnlyList<ProjectOptions> existing)
     {
-        var versao = UnityProjectVersion.Read(folder);
-        var repositorio = LocalRepositoryInfo.Read(folder);
+        // Com prazo: a pasta escolhida pode estar num compartilhamento de rede,
+        // e isto e chamado da thread da janela, logo depois da caixa de dialogo.
+        var versao = BoundedIo.Run(() => UnityProjectVersion.Read(folder));
+        var repositorio = BoundedIo.Run(() => LocalRepositoryInfo.Read(folder));
 
         var nome = SuggestName(repositorio?.Root ?? folder, existing);
 

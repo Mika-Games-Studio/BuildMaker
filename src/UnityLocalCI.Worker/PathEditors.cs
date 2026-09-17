@@ -32,28 +32,34 @@ public sealed class FolderPathEditor : UITypeEditor
             if (existente is not null) dialog.SelectedPath = existente;
         }
 
-        return dialog.ShowDialog() == DialogResult.OK ? dialog.SelectedPath : value;
+        return DialogOwner.Show(dialog) == DialogResult.OK ? dialog.SelectedPath : value;
     }
 
-    internal static string? PrimeiraPastaExistente(string caminho)
-    {
-        try
+    /// <summary>
+    /// Sobe o caminho ate achar uma pasta que exista. Com prazo, porque o
+    /// caminho pode ser um compartilhamento de rede fora do ar, e ai cada
+    /// pergunta fica presa ate o Windows desistir.
+    /// </summary>
+    public static string? PrimeiraPastaExistente(string caminho)
+        => BoundedIo.Run(() =>
         {
-            var atual = Path.GetFullPath(caminho);
-
-            while (!string.IsNullOrEmpty(atual))
+            try
             {
-                if (Directory.Exists(atual)) return atual;
-                atual = Path.GetDirectoryName(atual);
-            }
-        }
-        catch (Exception exception) when (exception is ArgumentException or IOException or NotSupportedException)
-        {
-            return null;
-        }
+                var atual = Path.GetFullPath(caminho);
 
-        return null;
-    }
+                while (!string.IsNullOrEmpty(atual))
+                {
+                    if (Directory.Exists(atual)) return atual;
+                    atual = Path.GetDirectoryName(atual);
+                }
+            }
+            catch (Exception exception) when (exception is ArgumentException or IOException or NotSupportedException)
+            {
+                return null;
+            }
+
+            return null;
+        });
 }
 
 /// <summary>
@@ -77,12 +83,33 @@ public sealed class FilePathEditor : UITypeEditor
 
         if (value is string atual && atual.Length > 0)
         {
-            dialog.FileName = Path.GetFileName(atual);
+            try { dialog.FileName = Path.GetFileName(atual); }
+            catch (ArgumentException) { /* caminho com caractere invalido: abre vazio */ }
 
             var pasta = FolderPathEditor.PrimeiraPastaExistente(atual);
             if (pasta is not null) dialog.InitialDirectory = pasta;
         }
 
-        return dialog.ShowDialog() == DialogResult.OK ? dialog.FileName : value;
+        return DialogOwner.Show(dialog) == DialogResult.OK ? dialog.FileName : value;
+    }
+}
+
+/// <summary>
+/// Abre qualquer caixa do Windows com dono explicito.
+///
+/// Sem dono, a caixa e modal para a thread mas nao fica presa a janela: ela
+/// pode aparecer ATRAS do programa. Quem esta olhando ve a janela recusar todo
+/// clique, sem nada na frente explicando por que — e conclui, com razao, que
+/// travou.
+/// </summary>
+internal static class DialogOwner
+{
+    public static DialogResult Show(CommonDialog dialog)
+    {
+        var owner = Form.ActiveForm ?? (Application.OpenForms.Count > 0 ? Application.OpenForms[0] : null);
+
+        return owner is null || owner.IsDisposed || !owner.Visible
+            ? dialog.ShowDialog()
+            : dialog.ShowDialog(owner);
     }
 }

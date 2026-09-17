@@ -123,6 +123,9 @@ public sealed class ProjectView
     private readonly RepositoryOptions _repository;
     private readonly PublishingOptions _publishing;
 
+    private string? _detectedFor;
+    private string? _detected;
+
     public ProjectView(ProjectOptions project)
     {
         _project = project;
@@ -136,9 +139,27 @@ public sealed class ProjectView
         // proprio projeto, que e quem sabe.
         if (string.IsNullOrWhiteSpace(_project.Unity?.EditorVersion))
         {
-            var detectada = UnityProjectVersion.Read(_repository.WorkspacePath);
+            var detectada = Detect(_repository.WorkspacePath);
             if (detectada is not null) EditorVersion = detectada;
         }
+    }
+
+    /// <summary>
+    /// Le a versao do disco no maximo uma vez por caminho, e com prazo.
+    ///
+    /// O PropertyGrid chama os getters a cada repintura: sem esta memoria, a
+    /// linha "EditorVersion no disco" faria uma leitura de arquivo por quadro —
+    /// imperceptivel num SSD local, e um congelamento a cada repintura quando o
+    /// workspace estiver num caminho de rede fora do ar.
+    /// </summary>
+    private string? Detect(string? path)
+    {
+        if (path == _detectedFor) return _detected;
+
+        _detectedFor = path;
+        _detected = BoundedIo.Run(() => UnityProjectVersion.Read(path));
+
+        return _detected;
     }
 
     [Category("Projeto")]
@@ -188,7 +209,7 @@ public sealed class ProjectView
 
             // O projeto no disco vale mais que o que estava digitado: buildar na
             // versao errada produz um artefato que parece certo e nao e.
-            var detectada = UnityProjectVersion.Read(value);
+            var detectada = Detect(value);
             if (detectada is not null) EditorVersion = detectada;
         }
     }
@@ -225,7 +246,7 @@ public sealed class ProjectView
     [Description("O que o ProjectVersion.txt do workspace diz agora. Se divergir do campo acima, a configuração está desatualizada.")]
     [ReadOnly(true)]
     public string DetectedEditorVersion
-        => UnityProjectVersion.Read(_repository.WorkspacePath) ?? "(workspace ainda não clonado)";
+        => Detect(_repository.WorkspacePath) ?? "(workspace ainda não clonado)";
 
     [Category("Unity")]
     [Description("Plataforma do build. Vazio herda de Defaults (WebGL).")]
