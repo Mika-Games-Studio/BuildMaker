@@ -42,12 +42,17 @@ powershell -ExecutionPolicy Bypass -File tools\instalar.ps1 -DeUrl https://.../U
 
 Na página **Configuração → Projetos**, clique em **Conectar ao GitHub**. A janela mostra um código, abre o navegador e, quando você autoriza, guarda o acesso no Gerenciador de Credenciais do Windows — o token não passa por arquivo, pela tela nem pela área de transferência. A configuração continua guardando só o **nome** da credencial.
 
-São dois caminhos, e a janela oferece o que estiver disponível:
+São três caminhos, e a janela oferece o que estiver disponível:
 
 | Caminho | Quando aparece | O que precisa |
 |---|---|---|
-| **Fluxo de dispositivo** | sempre | o *Client ID* de um OAuth App, uma vez por empresa — ele é público, esse fluxo não usa client secret |
+| **A conta que o Git desta máquina já usa** | sempre | nada, se alguém já clonou por HTTPS ou usa o GitHub Desktop aqui |
 | **Sessão do GitHub CLI** | quando o `gh` está instalado e conectado | nada |
+| **Fluxo de dispositivo** (código no navegador) | sempre | o *Client ID* de um OAuth App, uma vez por empresa — ele é público, esse fluxo não usa client secret |
+
+> **É assim que o GitHub Desktop funciona.** Ele é um OAuth App registrado, com o Client ID embutido no programa, entra pelo navegador e guarda o token no Gerenciador de Credenciais do Windows — que é de onde o `git` tira a credencial depois. Por isso o primeiro caminho existe: numa máquina que já clonou por HTTPS, o token já está lá, e perguntar de novo seria pedir o que já se tem. A pergunta é feita ao próprio git, com `git credential fill`, então vale para qualquer auxiliar de credencial configurado.
+
+Tudo isso mora na aba **GitHub** da configuração, e não no cadastro de cada projeto: a conexão é da máquina. A aba mostra o estado (conectado, apontando para credencial inexistente, ou sem conexão), quantos projetos a herdam, e tem **Testar acesso** — que pergunta ao servidor, projeto por projeto, se aquela conexão realmente alcança o repositório. Credencial existir no cofre não significa que ela tem permissão lá.
 
 Se preferir gravar um token à mão, o caminho antigo continua valendo:
 

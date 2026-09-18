@@ -39,8 +39,6 @@ public sealed class GeneralView(CiOptions options)
     private readonly StateOptions _state = options.State;
     private readonly UnityOptions _unity = options.Defaults.Unity;
     private readonly PublishingOptions _publishing = options.Defaults.Publishing;
-    private readonly GitHubOptions _github = options.GitHub;
-    private readonly RepositoryDefaults _repository = options.Defaults.Repository;
 
     // ------------------------------------------------------------------ fila
 
@@ -132,23 +130,38 @@ public sealed class GeneralView(CiOptions options)
         set => _unity.BuildTarget = Texto.OuNulo(value);
     }
 
-    [Category("GitHub")]
-    [DisplayName("Credencial da máquina")]
+}
+
+/// <summary>
+/// A aba GitHub: a conexao que vale para a maquina inteira.
+///
+/// Separada das outras de proposito. Ela nao pertence a nenhum projeto — e
+/// justamente o contrario: e o que todos herdam. Deixa-la no meio do cadastro
+/// de um projeto sugeria, errado, que cada jogo tem a sua.
+/// </summary>
+public sealed class GitHubView(CiOptions options)
+{
+    private readonly RepositoryDefaults _repository = options.Defaults.Repository;
+    private readonly GitHubOptions _github = options.GitHub;
+
+    [Category("Conexão")]
+    [DisplayName("Credencial no cofre do Windows")]
     [Description(
-        "Nome da credencial no cofre do Windows usada por TODOS os projetos que não definirem a própria. " +
-        "É o que o botão 'Conectar ao GitHub' preenche — o acesso ao Git é da máquina, não de cada jogo.")]
+        "Nome da credencial usada por TODOS os projetos que não definirem a própria. É o que o botão " +
+        "'Conectar ao GitHub' preenche. Aqui vai o NOME, nunca o token.")]
     public string? CredencialDaMaquina
     {
         get => _repository.PatCredentialName;
         set => _repository.PatCredentialName = Texto.OuNulo(value);
     }
 
-    [Category("GitHub")]
-    [DisplayName("ClientId do OAuth App")]
+    [Category("Entrar pelo navegador")]
+    [DisplayName("Client ID do OAuth App")]
     [Description(
-        "Usado pelo botão 'Conectar ao GitHub' para entrar pelo navegador. É público — o fluxo de dispositivo " +
-        "não usa client secret. Vazio faz a janela oferecer a sessão do GitHub CLI.")]
-    public string? GitHubClientId
+        "É assim que o GitHub Desktop funciona: ele é um OAuth App registrado, com o Client ID embutido. " +
+        "Registre um para a empresa uma vez e cole aqui — ele é público, o fluxo de dispositivo não usa " +
+        "client secret. Vazio ainda permite entrar pela conta que o Git ou o GitHub CLI já guardaram.")]
+    public string? ClientId
     {
         get => _github.ClientId;
         set => _github.ClientId = Texto.OuNulo(value);

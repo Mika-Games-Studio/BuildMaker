@@ -1,3 +1,5 @@
+using UnityLocalCI.Core.Abstractions;
+using UnityLocalCI.Core.Git;
 using Microsoft.Extensions.Logging.Abstractions;
 using UnityLocalCI.Core.Configuration;
 using UnityLocalCI.Core.Hosting;
@@ -22,6 +24,9 @@ public sealed class ConfigPanel : UserControl
 
     private readonly PropertyGrid _schedulerGrid = NewPropertyGrid();
     private readonly PropertyGrid _projectGrid = NewPropertyGrid();
+    private readonly PropertyGrid _githubGrid = NewPropertyGrid();
+
+    private readonly Label _githubStatus = new() { AutoSize = false };
 
     private readonly DarkListBox _projectList = new() { Dock = DockStyle.Fill };
 
@@ -73,7 +78,7 @@ public sealed class ConfigPanel : UserControl
         var listaBotoes = new FlowLayoutPanel
         {
             Dock = DockStyle.Bottom,
-            Height = 126,
+            Height = 84,
             Padding = new Padding(0, 8, 0, 0),
             BackColor = Theme.Surface,
         };
@@ -86,18 +91,10 @@ public sealed class ConfigPanel : UserControl
         var adicionar = new PillButton("Vazio") { Width = 76, Backdrop = Theme.Surface, Margin = new Padding(0, 6, 8, 0) };
         var remover = new PillButton("Remover", ButtonKind.Ghost) { Width = 92, Backdrop = Theme.Surface, Margin = new Padding(0, 6, 8, 0) };
 
-        var conectar = new PillButton("Conectar ao GitHub", ButtonKind.Default)
-        {
-            Width = 168,
-            Backdrop = Theme.Surface,
-            Margin = new Padding(0, 6, 8, 0),
-        };
-
         vincular.Click += (_, _) => LinkUnityProject();
         adicionar.Click += (_, _) => AddProject();
         remover.Click += (_, _) => RemoveProject();
-        conectar.Click += (_, _) => ConnectToGitHub();
-        listaBotoes.Controls.AddRange([conectar, vincular, adicionar, remover]);
+        listaBotoes.Controls.AddRange([vincular, adicionar, remover]);
 
         _projectList.SelectedIndexChanged += (_, _) => ShowSelectedProject();
 
@@ -137,6 +134,8 @@ public sealed class ConfigPanel : UserControl
         projetos.Controls.Add(split);
         tabs.TabPages.Add(projetos);
 
+        tabs.TabPages.Add(BuildGitHubTab());
+
         // --- rodape
         var acoes = new FlowLayoutPanel
         {
@@ -163,6 +162,184 @@ public sealed class ConfigPanel : UserControl
         Controls.Add(acoes);
     }
 
+    /// <summary>
+    /// A conexao com o GitHub tem aba propria porque ela nao pertence a projeto
+    /// nenhum: e o que todos herdam. No meio do cadastro de um projeto, ela
+    /// sugeria — errado — que cada jogo tem a sua.
+    /// </summary>
+    private TabPage BuildGitHubTab()
+    {
+        var pagina = new TabPage("GitHub") { Padding = new Padding(0, 10, 0, 0) };
+
+        _githubStatus.Dock = DockStyle.Top;
+        _githubStatus.Height = 72;
+        _githubStatus.Padding = new Padding(2, 4, 2, 8);
+
+        var botoes = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            Height = 46,
+            BackColor = Theme.Surface,
+        };
+
+        var conectar = new PillButton("Conectar ao GitHub", ButtonKind.Primary) { Width = 168, Backdrop = Theme.Surface };
+        var testar = new PillButton("Testar acesso", ButtonKind.Default) { Width = 130, Backdrop = Theme.Surface };
+        var esquecer = new PillButton("Desconectar", ButtonKind.Ghost) { Width = 120, Backdrop = Theme.Surface };
+
+        conectar.Click += (_, _) => ConnectToGitHub();
+        testar.Click += (_, _) => TestGitHubAccess(testar);
+        esquecer.Click += (_, _) => DisconnectFromGitHub();
+
+        botoes.Controls.AddRange([conectar, testar, esquecer]);
+
+        _githubGrid.Dock = DockStyle.Fill;
+
+        var cartao = WrapInCard(_githubGrid);
+        cartao.Controls.Add(botoes);
+        cartao.Controls.Add(_githubStatus);
+
+        pagina.Controls.Add(cartao);
+        return pagina;
+    }
+
+    /// <summary>
+    /// Em que pe esta a conexao da maquina. Mostra tambem quantos projetos a
+    /// herdam e quantos tem excecao: sem isso, "conectado" nao responde a
+    /// pergunta que importa, que e se os projetos vao conseguir clonar.
+    /// </summary>
+    private void RefreshGitHubStatus()
+    {
+        var nome = _options.Defaults.Repository.PatCredentialName;
+
+        var herdam = _options.Projects.Count(p => string.IsNullOrWhiteSpace(p.Repository?.PatCredentialName));
+        var excecoes = _options.Projects.Count - herdam;
+
+        var rodape = $"{herdam} projeto(s) herdam esta conexão" +
+                     (excecoes > 0 ? $", {excecoes} com credencial própria." : ".");
+
+        if (string.IsNullOrWhiteSpace(nome))
+        {
+            _githubStatus.ForeColor = Theme.Warning;
+            _githubStatus.Text =
+                "Sem conexão. Use 'Conectar ao GitHub' — dá para entrar pelo navegador, ou aproveitar a conta " +
+                "que o Git ou o GitHub CLI desta máquina já guardaram." + Environment.NewLine + rodape;
+            return;
+        }
+
+        var existe = false;
+        try { existe = _credentials.Exists(nome); }
+        catch (InvalidOperationException) { /* cofre indisponivel: tratado como ausente */ }
+
+        _githubStatus.ForeColor = existe ? Theme.Success : Theme.Danger;
+        _githubStatus.Text = existe
+            ? $"Conectado. O acesso está guardado no cofre do Windows como '{nome}'." + Environment.NewLine + rodape
+            : $"A configuração aponta para '{nome}', que não existe no cofre do Windows. " +
+              "Conecte de novo." + Environment.NewLine + rodape;
+    }
+
+    /// <summary>
+    /// Pergunta ao servidor, projeto por projeto, se a conexao atual da acesso.
+    /// E a unica resposta que vale: credencial existir no cofre nao significa
+    /// que ela alcanca aquele repositorio.
+    /// </summary>
+    private void TestGitHubAccess(PillButton botao)
+    {
+        var alvos = _options.Projects
+            .Where(p => !string.IsNullOrWhiteSpace(p.Repository?.Url))
+            .Select(p => (p.Name, Url: p.Repository!.Url, Credencial: ProjectResolver.ResolveCredential(p, _options.Defaults)))
+            .ToList();
+
+        if (alvos.Count == 0)
+        {
+            MessageBox.Show(this, "Nenhum projeto com URL cadastrada para testar.",
+                "UnityLocalCI", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        botao.Enabled = false;
+        _githubStatus.ForeColor = Theme.TextMuted;
+        _githubStatus.Text = "Perguntando ao servidor...";
+
+        _ = Task.Run(async () =>
+        {
+            var git = new GitClient(
+                new ProcessRunner(NullLogger<ProcessRunner>.Instance),
+                NullLogger<GitClient>.Instance);
+
+            var linhas = new List<string>();
+
+            foreach (var (nome, url, credencial) in alvos)
+            {
+                var token = string.IsNullOrWhiteSpace(credencial) ? null : _credentials.Read(credencial);
+
+                try
+                {
+                    var branches = await git.ListRemoteBranchesAsync(
+                        new GitContext { WorkspacePath = "", RepositoryUrl = url, Branch = "", PersonalAccessToken = token },
+                        CancellationToken.None).ConfigureAwait(false);
+
+                    linhas.Add($"OK    {nome}: {branches.Count} branch(es).");
+                }
+                catch (GitCommandException exception)
+                {
+                    var motivo = exception.StandardError.Split('\n').FirstOrDefault()?.Trim();
+                    linhas.Add($"FALHA {nome}: {motivo}");
+                }
+                catch (Exception exception)
+                {
+                    linhas.Add($"FALHA {nome}: {exception.Message}");
+                }
+            }
+
+            NoFormulario(() =>
+            {
+                botao.Enabled = true;
+                RefreshGitHubStatus();
+
+                MessageBox.Show(
+                    this,
+                    string.Join(Environment.NewLine, linhas) + Environment.NewLine + Environment.NewLine +
+                    "'Write access to repository not granted' quer dizer que o token autenticou mas não tem " +
+                    "permissão naquele repositório — não que falte permissão de escrita.",
+                    "Teste de acesso", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            });
+        });
+    }
+
+    /// <summary>
+    /// Esquece a conexao na configuracao. O token continua no cofre do Windows:
+    /// apagar credencial que este programa nao criou seria passar por cima de
+    /// outra coisa que a use.
+    /// </summary>
+    private void DisconnectFromGitHub()
+    {
+        if (string.IsNullOrWhiteSpace(_options.Defaults.Repository.PatCredentialName)) return;
+
+        var resposta = MessageBox.Show(
+            this,
+            "Os projetos deixam de usar esta conexão e voltam a clonar sem credencial." +
+            Environment.NewLine + Environment.NewLine +
+            "O token continua guardado no cofre do Windows; para removê-lo de vez, use o Gerenciador de " +
+            "Credenciais do Windows.",
+            "UnityLocalCI", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+
+        if (resposta != DialogResult.Yes) return;
+
+        _options.Defaults.Repository.PatCredentialName = null;
+        _githubGrid.Refresh();
+        RefreshGitHubStatus();
+        ShowSelectedProject();
+    }
+
+    private void NoFormulario(Action acao)
+    {
+        if (!IsHandleCreated) return;
+
+        try { BeginInvoke(acao); }
+        catch (ObjectDisposedException) { /* janela fechando */ }
+        catch (InvalidOperationException) { /* handle indo embora */ }
+    }
+
     private static Card WrapInCard(Control content)
     {
         var card = new Card { Dock = DockStyle.Fill, Padding = new Padding(10) };
@@ -187,6 +364,8 @@ public sealed class ConfigPanel : UserControl
         }
 
         _schedulerGrid.SelectedObject = new GeneralView(_options);
+        _githubGrid.SelectedObject = new GitHubView(_options);
+        RefreshGitHubStatus();
         RefreshProjectList();
     }
 

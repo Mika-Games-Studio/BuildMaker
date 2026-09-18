@@ -52,6 +52,7 @@ internal sealed class GitHubSignInForm : Form
 
     private readonly PillButton _abrir;
     private readonly PillButton _usarGh;
+    private readonly PillButton _usarGit;
     private readonly PillButton _fechar = new("Cancelar", ButtonKind.Ghost) { Width = 110 };
 
     private CancellationTokenSource? _cancelamento;
@@ -81,6 +82,7 @@ internal sealed class GitHubSignInForm : Form
 
         _abrir = new PillButton("Abrir o GitHub e copiar o código", ButtonKind.Primary) { Width = 250 };
         _usarGh = new PillButton("Usar a conta do GitHub CLI", ButtonKind.Default) { Width = 210 };
+        _usarGit = new PillButton("Usar a conta do Git desta máquina", ButtonKind.Default) { Width = 250 };
 
         BuildLayout();
 
@@ -103,6 +105,7 @@ internal sealed class GitHubSignInForm : Form
         _fechar.Click += (_, _) => Close();
         _abrir.Click += (_, _) => AbrirNavegador();
         _usarGh.Click += (_, _) => UsarGitHubCli();
+        _usarGit.Click += (_, _) => UsarContaDoGit();
 
         acoes.Controls.AddRange([_fechar, _abrir]);
 
@@ -114,12 +117,21 @@ internal sealed class GitHubSignInForm : Form
         Controls.Add(_situacao);
         Controls.Add(acoes);
 
-        if (GitHubCli.Available)
+        // Os atalhos ficam embaixo do fluxo do navegador, e nao no lugar dele:
+        // eles dependem de a maquina ja ter uma conta guardada, o que nem sempre
+        // e verdade na maquina de build.
+        var atalhos = new FlowLayoutPanel
         {
-            var linhaGh = new Panel { Dock = DockStyle.Bottom, Height = 46, BackColor = Theme.Canvas };
-            linhaGh.Controls.Add(_usarGh);
-            Controls.Add(linhaGh);
-        }
+            Dock = DockStyle.Bottom,
+            Height = 46,
+            BackColor = Theme.Canvas,
+            WrapContents = false,
+        };
+
+        atalhos.Controls.Add(_usarGit);
+        if (GitHubCli.Available) atalhos.Controls.Add(_usarGh);
+
+        Controls.Add(atalhos);
 
         if (_clientId is null) MontarPedidoDeClientId();
     }
@@ -228,6 +240,39 @@ internal sealed class GitHubSignInForm : Form
 
         Abrir(_login.VerificationUri);
         Situacao("Código copiado. Cole no navegador e autorize.", problema: false);
+    }
+
+    // ------------------------------------------- conta ja guardada na maquina
+
+    /// <summary>
+    /// A conta que o proprio git usa aqui — a mesma que o GitHub Desktop grava
+    /// quando alguem entra por ele. Zero configuracao quando ja existe.
+    /// </summary>
+    private void UsarContaDoGit()
+    {
+        Situacao("Perguntando ao Git desta máquina...", problema: false);
+        _usarGit.Enabled = false;
+
+        _ = Task.Run(() =>
+        {
+            var token = GitCredentials.ReadToken();
+
+            NaJanela(() =>
+            {
+                _usarGit.Enabled = true;
+
+                if (token is null)
+                {
+                    Situacao(
+                        "O Git desta máquina não tem conta do GitHub guardada. Entre pelo navegador, ou clone " +
+                        "algo por HTTPS uma vez para o Windows guardar a credencial.",
+                        problema: true);
+                    return;
+                }
+
+                Concluir(token);
+            });
+        });
     }
 
     // ------------------------------------------------------------- GitHub CLI
