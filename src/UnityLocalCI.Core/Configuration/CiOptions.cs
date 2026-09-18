@@ -7,9 +7,27 @@ public sealed class CiOptions
 
     public SchedulerOptions Scheduler { get; set; } = new();
     public ProjectDefaults Defaults { get; set; } = new();
+
+    /// <summary>
+    /// Preenchida a partir dos arquivos da pasta 'projetos', um por projeto.
+    /// Nao e mais lida do appsettings.json.
+    /// </summary>
     public List<ProjectOptions> Projects { get; set; } = new();
+
     public NotificationOptions Notifications { get; set; } = new();
     public StateOptions State { get; set; } = new();
+    public GitHubOptions GitHub { get; set; } = new();
+}
+
+/// <summary>Dados do OAuth App usado para conectar ao GitHub pela janela.</summary>
+public sealed class GitHubOptions
+{
+    /// <summary>
+    /// Client ID do OAuth App. E publico — o fluxo de dispositivo nao usa client
+    /// secret, e e por isso que ele serve a um programa instalado. Vazio faz a
+    /// janela oferecer a conexao pela sessao do GitHub CLI.
+    /// </summary>
+    public string? ClientId { get; set; }
 }
 
 public sealed class SchedulerOptions

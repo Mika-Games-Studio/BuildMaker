@@ -68,12 +68,12 @@ public sealed class ConfigPanel : UserControl
             BackColor = Theme.Canvas,
         };
 
-        // Duas fileiras: a coluna da lista e estreita, e numa fileira so o
-        // ultimo botao saia da area visivel sem deixar rastro.
+        // Tres fileiras: a coluna da lista e estreita, e o botao que nao
+        // coubesse sairia da area visivel sem deixar rastro.
         var listaBotoes = new FlowLayoutPanel
         {
             Dock = DockStyle.Bottom,
-            Height = 82,
+            Height = 126,
             Padding = new Padding(0, 8, 0, 0),
             BackColor = Theme.Surface,
         };
@@ -86,10 +86,18 @@ public sealed class ConfigPanel : UserControl
         var adicionar = new PillButton("Vazio") { Width = 76, Backdrop = Theme.Surface, Margin = new Padding(0, 6, 8, 0) };
         var remover = new PillButton("Remover", ButtonKind.Ghost) { Width = 92, Backdrop = Theme.Surface, Margin = new Padding(0, 6, 8, 0) };
 
+        var conectar = new PillButton("Conectar ao GitHub", ButtonKind.Default)
+        {
+            Width = 168,
+            Backdrop = Theme.Surface,
+            Margin = new Padding(0, 6, 8, 0),
+        };
+
         vincular.Click += (_, _) => LinkUnityProject();
         adicionar.Click += (_, _) => AddProject();
         remover.Click += (_, _) => RemoveProject();
-        listaBotoes.Controls.AddRange([vincular, adicionar, remover]);
+        conectar.Click += (_, _) => ConnectToGitHub();
+        listaBotoes.Controls.AddRange([conectar, vincular, adicionar, remover]);
 
         _projectList.SelectedIndexChanged += (_, _) => ShowSelectedProject();
 
@@ -262,6 +270,53 @@ public sealed class ConfigPanel : UserControl
         base.OnVisibleChanged(e);
 
         if (Visible) ReportBranches(SelectedProject()?.Repository?.Url);
+    }
+
+    /// <summary>
+    /// Entrar no GitHub pelo navegador e apontar os projetos para a credencial
+    /// resultante.
+    ///
+    /// O token vai do navegador para o cofre do Windows sem passar por arquivo
+    /// nem pela tela; o que fica na configuracao continua sendo so o NOME da
+    /// credencial.
+    /// </summary>
+    private void ConnectToGitHub()
+    {
+        using var janela = new GitHubSignInForm(_credentials, _options.GitHub.ClientId);
+
+        if (janela.ShowDialog(this) != DialogResult.OK) return;
+
+        // O Client ID digitado na hora fica gravado, para a proxima conexao
+        // nesta maquina ser um clique so.
+        if (janela.ClientIdInformado is { Length: > 0 } clientId && clientId != _options.GitHub.ClientId)
+            _options.GitHub.ClientId = clientId;
+
+        var doGitHub = _options.Projects
+            .Where(p => GitHubConnection.IsGitHub(p.Repository?.Url))
+            .ToList();
+
+        foreach (var projeto in doGitHub)
+            (projeto.Repository ??= new RepositoryOptions()).PatCredentialName = GitHubConnection.CredentialName;
+
+        ShowSelectedProject();
+
+        // A lista de branches de todos eles muda agora que ha acesso.
+        _branches.Clear();
+        if (SelectedProject() is { } atual)
+        {
+            _branches.EnsureLoaded(atual, force: true);
+            ReportBranches(atual.Repository?.Url);
+        }
+
+        MessageBox.Show(
+            this,
+            "Conectado ao GitHub." + Environment.NewLine + Environment.NewLine +
+            (doGitHub.Count == 0
+                ? "Nenhum projeto do GitHub cadastrado ainda; o acesso já fica guardado para quando houver."
+                : $"{doGitHub.Count} projeto(s) passaram a usar a credencial '{GitHubConnection.CredentialName}'.") +
+            Environment.NewLine + Environment.NewLine +
+            "Falta salvar para valer.",
+            "UnityLocalCI", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 
     private ProjectOptions? SelectedProject()

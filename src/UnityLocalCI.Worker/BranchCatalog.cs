@@ -46,6 +46,23 @@ public sealed class BranchCatalog
             return _porRepositorio.TryGetValue(repositoryUrl, out var lista) ? lista : [];
     }
 
+    /// <summary>
+    /// Esquece o que foi descoberto. Serve para depois de conectar ao GitHub: a
+    /// lista vazia de antes foi resultado da falta de acesso, e insistir nela
+    /// esconderia justamente o que acabou de passar a funcionar.
+    /// </summary>
+    public void Clear()
+    {
+        lock (_gate) _porRepositorio.Clear();
+    }
+
+    /// <summary>
+    /// Usado pelos testes para provar o caminho do dropdown sem depender de rede
+    /// nem de clone em disco.
+    /// </summary>
+    internal void Seed(string url, IEnumerable<string> branches)
+        => Publicar(url, branches, concluido: true);
+
     public bool IsLoading(string? repositoryUrl)
     {
         if (string.IsNullOrWhiteSpace(repositoryUrl)) return false;

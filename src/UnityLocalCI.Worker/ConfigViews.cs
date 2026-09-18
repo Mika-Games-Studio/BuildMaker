@@ -39,6 +39,7 @@ public sealed class GeneralView(CiOptions options)
     private readonly StateOptions _state = options.State;
     private readonly UnityOptions _unity = options.Defaults.Unity;
     private readonly PublishingOptions _publishing = options.Defaults.Publishing;
+    private readonly GitHubOptions _github = options.GitHub;
 
     // ------------------------------------------------------------------ fila
 
@@ -128,6 +129,17 @@ public sealed class GeneralView(CiOptions options)
     {
         get => _unity.BuildTarget;
         set => _unity.BuildTarget = Texto.OuNulo(value);
+    }
+
+    [Category("GitHub")]
+    [DisplayName("ClientId do OAuth App")]
+    [Description(
+        "Usado pelo botão 'Conectar ao GitHub' para entrar pelo navegador. É público — o fluxo de dispositivo " +
+        "não usa client secret. Vazio faz a janela oferecer a sessão do GitHub CLI.")]
+    public string? GitHubClientId
+    {
+        get => _github.ClientId;
+        set => _github.ClientId = Texto.OuNulo(value);
     }
 }
 

@@ -149,6 +149,62 @@ public class BranchListingTests : IDisposable
         Assert.False(new BranchConverter().GetStandardValuesExclusive(null));
     }
 
+    /// <summary>
+    /// O contexto que o PropertyGrid passa ao abrir o dropdown. Sem a instancia,
+    /// o conversor nao tem de onde tirar a lista — foi assim que a lista apareceu
+    /// vazia na tela.
+    /// </summary>
+    private sealed class ContextoDaGrade(object instancia) : ITypeDescriptorContext
+    {
+        public object? Instance => instancia;
+        public IContainer? Container => null;
+        public PropertyDescriptor? PropertyDescriptor => null;
+        public object? GetService(Type serviceType) => null;
+        public void OnComponentChanged() { }
+        public bool OnComponentChanging() => true;
+    }
+
+    [Fact]
+    public void O_dropdown_recebe_as_branches_do_repositorio_do_projeto()
+    {
+        const string url = "https://github.com/OPAGames/CrashUnity.git";
+
+        var catalogo = new BranchCatalog(new FakeCredentialStore());
+        catalogo.Seed(url, ["crash-aviaturbo-hml", "crash-aviaturbo-dev", "main"]);
+
+        var projeto = new ProjectOptions
+        {
+            Name = "CrashUnity",
+            Repository = new RepositoryOptions { Url = url, Branch = "main" },
+        };
+
+        var view = new ProjectView(projeto, catalogo);
+        var descritor = TypeDescriptor.GetProperties(typeof(ProjectView))[nameof(ProjectView.Branch)]!;
+
+        var valores = descritor.Converter.GetStandardValues(new ContextoDaGrade(view))!.Cast<string>().ToArray();
+
+        Assert.Equal(["crash-aviaturbo-dev", "crash-aviaturbo-hml", "main"], valores);
+    }
+
+    /// <summary>
+    /// Projeto de outro repositorio nao herda a lista do vizinho: cada URL tem a
+    /// sua, e misturar faria alguem escolher uma branch que nao existe la.
+    /// </summary>
+    [Fact]
+    public void Cada_repositorio_tem_a_propria_lista()
+    {
+        var catalogo = new BranchCatalog(new FakeCredentialStore());
+        catalogo.Seed("https://github.com/OPAGames/CrashUnity.git", ["crash-aviaturbo-hml"]);
+
+        var outro = new ProjectOptions
+        {
+            Name = "HumanXRobots",
+            Repository = new RepositoryOptions { Url = "https://github.com/Mika-Games-Studio/HumanXRobots.git" },
+        };
+
+        Assert.Empty(new ProjectView(outro, catalogo).KnownBranches);
+    }
+
     [Fact]
     public void Sem_catalogo_a_lista_fica_vazia_em_vez_de_quebrar()
     {

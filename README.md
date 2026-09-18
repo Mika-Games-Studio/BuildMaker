@@ -38,12 +38,21 @@ powershell -ExecutionPolicy Bypass -File tools\instalar.ps1 -DeUrl https://.../U
 
 **Não pede administrador.** Instala em `%LOCALAPPDATA%\UnityLocalCI`, cria atalho no menu Iniciar e na área de trabalho, liga o início automático com o Windows e abre o programa. Uma reinstalação por cima preserva o `appsettings.json`.
 
-### 3. Gravar o token e a licença
+### 3. Conectar ao GitHub e ativar a licença
 
-O PAT do repositório mora no Gerenciador de Credenciais do Windows; a configuração guarda só o **nome** da credencial. O PAT precisa do escopo de leitura de código.
+Na página **Configuração → Projetos**, clique em **Conectar ao GitHub**. A janela mostra um código, abre o navegador e, quando você autoriza, guarda o acesso no Gerenciador de Credenciais do Windows — o token não passa por arquivo, pela tela nem pela área de transferência. A configuração continua guardando só o **nome** da credencial.
+
+São dois caminhos, e a janela oferece o que estiver disponível:
+
+| Caminho | Quando aparece | O que precisa |
+|---|---|---|
+| **Fluxo de dispositivo** | sempre | o *Client ID* de um OAuth App, uma vez por empresa — ele é público, esse fluxo não usa client secret |
+| **Sessão do GitHub CLI** | quando o `gh` está instalado e conectado | nada |
+
+Se preferir gravar um token à mão, o caminho antigo continua valendo:
 
 ```bash
-cmdkey /generic:UnityLocalCI_AzureDevOpsPat /user:pat /pass:SEU_PAT_AQUI
+cmdkey /generic:UnityLocalCI_GitHubPat /user:pat /pass:SEU_PAT_AQUI
 ```
 
 A licença do Unity é ativada uma vez por máquina, com escopo de máquina, para valer também quando o CI roda como serviço:
@@ -153,6 +162,22 @@ A navegação é uma **coluna à esquerda**, com cinco páginas:
 
 Cada página tem cabeçalho com as próprias ações, e o rodapé mostra o estado do serviço e os números da fila.
 
+### Um arquivo de configuração por projeto
+
+O `appsettings.json` guarda só o que é da máquina: fila, estado, padrões, notificações e o Client ID do GitHub. **Cada projeto é um arquivo com o nome dele**, na pasta `projetos\`:
+
+```
+UnityLocalCI\
+├── appsettings.json          fila, estado, padrões
+└── projetos\
+    ├── CrashUnity.json
+    └── HumanXRobots.json
+```
+
+Mexer num projeto não reescreve os outros, um erro de digitação num arquivo não derruba a leitura de todos — o que falha aparece com o nome do arquivo e o resto continua valendo —, e dá para copiar a configuração de um projeto para outra máquina sem levar o resto junto. Renomear o projeto renomeia o arquivo; removê-lo apaga o arquivo.
+
+A migração é automática e acontece uma vez: quem já tinha projetos dentro do `appsettings.json` os encontra na pasta depois da primeira abertura, e o array some do arquivo. Os arquivos são escritos antes de o array ser removido — se a máquina cair no meio, o pior caso é a lista aparecer duplicada, não sumir.
+
 ### Cadastrar projeto sem digitar caminho
 
 Na página Configuração, **nenhum caminho precisa ser digitado**: cada campo de pasta ou arquivo abre a caixa de seleção do Windows. Caminho digitado é o tipo de erro que só aparece depois, na hora do clone, do build ou da cópia.
@@ -169,6 +194,10 @@ O botão **Vincular projeto Unity** vai além: você aponta a pasta de um projet
 A versão do editor também é relida **sempre que o `WorkspacePath` é escolhido**, e a linha *EditorVersion no disco* mostra o que o projeto clonado diz agora — se divergir do campo gravado, a configuração ficou para trás depois de o time subir o projeto para outra versão do Unity. Buildar na versão errada produz um artefato que parece certo e não é, então essa é a única coisa da configuração que nunca é adivinhada.
 
 Os arquivos do Git e o `ProjectVersion.txt` são **lidos direto, sem invocar o `git`**: isso roda na thread da interface, ao lado de uma caixa de diálogo, e um processo externo ali travaria a janela.
+
+O campo **Branch é uma lista**, montada de duas fontes: os refs do clone local, lidos do disco (respondem na hora, servem offline e sem credencial), e `git ls-remote` no servidor, que traz também as branches criadas depois do último fetch. A consulta ao servidor roda fora da thread da janela. A lista **não é exclusiva** — dá para digitar uma branch que ainda não existe, porque cadastrar o projeto antes de criar a branch de homologação é normal.
+
+> **Lista vazia quase sempre é falta de acesso**, não ausência de branches: sem clone local e sem credencial válida, não há de onde tirar os nomes. A linha de mensagem diz qual repositório falhou; **Conectar ao GitHub** resolve.
 
 > **O workspace nunca é a pasta que você escolheu.** Antes de cada build o pipeline apaga o que não estiver commitado; apontá-lo para a sua pasta de trabalho destruiria o que estivesse em andamento. Por isso o cadastro sugere um caminho próprio, e o projeto entra **desligado** até você conferir.
 

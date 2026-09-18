@@ -42,6 +42,12 @@ internal static class Program
 
     private static async Task<int> RunHeadlessAsync(string[] args)
     {
+        var configPath = ConfigFile.DefaultPath;
+
+        // Uma vez, e so na primeira vez: projetos que ainda estejam dentro do
+        // appsettings.json passam a ter arquivo proprio.
+        ProjectFiles.MigrateFromAppSettings(configPath);
+
         var builder = Host.CreateApplicationBuilder(args);
 
         builder.Configuration
@@ -51,7 +57,7 @@ internal static class Program
             .AddEnvironmentVariables("UNITYLOCALCI_");
 
         builder.Services.AddWindowsService(options => options.ServiceName = "UnityLocalCI");
-        builder.Services.AddUnityLocalCI(builder.Configuration);
+        builder.Services.AddUnityLocalCI(builder.Configuration, ProjectFiles.FolderFor(configPath));
 
         var host = builder.Build();
 

@@ -36,6 +36,7 @@ public sealed class FakeCredentialStore : ICredentialStore
     public void Set(string name, string value) => _values[name] = value;
     public bool Exists(string credentialName) => _values.ContainsKey(credentialName);
     public string? Read(string credentialName) => _values.TryGetValue(credentialName, out var v) ? v : null;
+    public void Write(string credentialName, string secret) => _values[credentialName] = secret;
 }
 
 public sealed class FakeSystemResources : ISystemResources

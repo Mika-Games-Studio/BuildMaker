@@ -27,9 +27,30 @@ namespace UnityLocalCI.Core.Hosting;
 /// </summary>
 public static class ServiceRegistration
 {
-    public static void AddUnityLocalCI(this IServiceCollection services, IConfiguration configuration)
+    /// <param name="projectsFolder">
+    /// Pasta com um arquivo por projeto. Nula usa a pasta 'projetos' ao lado do
+    /// executavel, que e onde o instalador a coloca.
+    /// </param>
+    public static void AddUnityLocalCI(
+        this IServiceCollection services, IConfiguration configuration, string? projectsFolder = null)
     {
-        services.AddOptions<CiOptions>().Bind(configuration).ValidateOnStart();
+        var pastaDeProjetos = projectsFolder
+                              ?? Path.Combine(AppContext.BaseDirectory, ProjectFiles.FolderName);
+
+        services.AddOptions<CiOptions>()
+            .Bind(configuration)
+
+            // Os projetos vem dos arquivos da pasta, e nao da secao 'Projects'.
+            // Um arquivo por projeto: mexer num deles nao reescreve os outros, e
+            // um erro de digitacao num nao derruba a leitura de todos.
+            .PostConfigure(options =>
+            {
+                var daPasta = ProjectFiles.LoadAll(pastaDeProjetos);
+                if (daPasta.Count > 0 || Directory.Exists(pastaDeProjetos))
+                    options.Projects = daPasta.ToList();
+            })
+            .ValidateOnStart();
+
         services.AddSingleton<IValidateOptions<CiOptions>, CiOptionsValidator>();
 
         // Infraestrutura

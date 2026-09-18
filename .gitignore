@@ -4,3 +4,4 @@ obj/
 appsettings.local.json
 publicado/
 UnityLocalCI.zip
+.idea/
