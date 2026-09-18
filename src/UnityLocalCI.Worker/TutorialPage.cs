@@ -95,11 +95,16 @@ internal sealed class TutorialPage : Panel
         Comando(@"powershell -ExecutionPolicy Bypass -File tools\publicar.ps1");
         Comando(@"powershell -ExecutionPolicy Bypass -File tools\instalar.ps1");
 
-        Passo(2, "Gravar o PAT no Windows",
-            "O token de acesso ao repositório fica no Gerenciador de Credenciais do Windows, nunca na " +
-            "configuração. O que o arquivo guarda é só o NOME da credencial. O PAT precisa do escopo de " +
-            "leitura de código.");
-        Comando("cmdkey /generic:UnityLocalCI_AzureDevOpsPat /user:pat /pass:SEU_PAT_AQUI");
+        Passo(2, "Conectar ao GitHub",
+            "Na página Configuração, aba GitHub, clique em \"Conectar ao GitHub\". Ele procura primeiro uma " +
+            "conta que esta máquina já tenha — a do cofre, a que o Git usa, a do GitHub CLI — e só abre o " +
+            "navegador se não achar nenhuma. A conexão é da máquina inteira: todos os projetos herdam.");
+        Lista(
+            "o token vai para o Gerenciador de Credenciais do Windows; a configuração guarda só o NOME da credencial",
+            "\"Testar acesso\" pergunta ao servidor, projeto por projeto, se a conexão alcança o repositório",
+            "\"Entrar com outra conta\" é o caminho para trocar de conta ou para uma máquina limpa");
+        Paragrafo("Se preferir gravar um token à mão, o nome da credencial é este:", recuo: 34);
+        Comando("cmdkey /generic:UnityLocalCI_GitHub /user:pat /pass:SEU_PAT_AQUI");
 
         Passo(3, "Ativar a licença do Unity",
             "Uma vez por máquina. A licença fica com escopo de máquina, então funciona também quando o CI " +

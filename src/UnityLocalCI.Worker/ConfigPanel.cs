@@ -184,13 +184,15 @@ public sealed class ConfigPanel : UserControl
 
         var conectar = new PillButton("Conectar ao GitHub", ButtonKind.Primary) { Width = 168, Backdrop = Theme.Surface };
         var testar = new PillButton("Testar acesso", ButtonKind.Default) { Width = 130, Backdrop = Theme.Surface };
+        var outraConta = new PillButton("Entrar com outra conta", ButtonKind.Default) { Width = 180, Backdrop = Theme.Surface };
         var esquecer = new PillButton("Desconectar", ButtonKind.Ghost) { Width = 120, Backdrop = Theme.Surface };
 
-        conectar.Click += (_, _) => ConnectToGitHub();
+        conectar.Click += (_, _) => ConnectToGitHub(conectar);
         testar.Click += (_, _) => TestGitHubAccess(testar);
+        outraConta.Click += (_, _) => SignInToGitHub();
         esquecer.Click += (_, _) => DisconnectFromGitHub();
 
-        botoes.Controls.AddRange([conectar, testar, esquecer]);
+        botoes.Controls.AddRange([conectar, testar, outraConta, esquecer]);
 
         _githubGrid.Dock = DockStyle.Fill;
 
@@ -221,8 +223,9 @@ public sealed class ConfigPanel : UserControl
         {
             _githubStatus.ForeColor = Theme.Warning;
             _githubStatus.Text =
-                "Sem conexão. Use 'Conectar ao GitHub' — dá para entrar pelo navegador, ou aproveitar a conta " +
-                "que o Git ou o GitHub CLI desta máquina já guardaram." + Environment.NewLine + rodape;
+                "Sem conexão. Clique em 'Conectar ao GitHub': ele procura primeiro a conta que o Git ou o " +
+                "GitHub CLI desta máquina já guardaram, e só abre o navegador se não achar nada." +
+                Environment.NewLine + rodape;
             return;
         }
 
@@ -452,16 +455,71 @@ public sealed class ConfigPanel : UserControl
     }
 
     /// <summary>
-    /// Entrar no GitHub pelo navegador e apontar os projetos para a credencial
-    /// resultante.
+    /// O botao que resolve o caso normal: olha primeiro o que esta maquina ja
+    /// tem e so manda para o navegador quando nao ha nada.
     ///
-    /// O token vai do navegador para o cofre do Windows sem passar por arquivo
-    /// nem pela tela; o que fica na configuracao continua sendo so o NOME da
-    /// credencial.
+    /// A ordem importa. Quem ja clonou por HTTPS aqui, ja usa o GitHub Desktop
+    /// ou ja rodou 'gh auth login' tem um token guardado; abrir o navegador
+    /// nesse caso seria pedir de novo o que ja esta na mao — e ainda obrigaria a
+    /// registrar um OAuth App so para isso.
     /// </summary>
-    private void ConnectToGitHub()
+    private void ConnectToGitHub(PillButton botao)
     {
-        using var janela = new GitHubSignInForm(_credentials, _options.GitHub.ClientId);
+        botao.Enabled = false;
+        _githubStatus.ForeColor = Theme.TextMuted;
+        _githubStatus.Text = "Procurando uma conta do GitHub já guardada nesta máquina...";
+
+        _ = Task.Run(() =>
+        {
+            ContaEncontrada? conta = null;
+            string? falha = null;
+
+            try
+            {
+                var busca = new GitHubDiscovery(_credentials);
+                conta = busca.Procurar();
+                if (conta is not null) busca.Guardar(conta);
+            }
+            catch (Exception exception)
+            {
+                falha = exception.Message;
+            }
+
+            NoFormulario(() =>
+            {
+                botao.Enabled = true;
+
+                if (falha is not null)
+                {
+                    _githubStatus.ForeColor = Theme.Danger;
+                    _githubStatus.Text = "Não foi possível guardar o acesso no cofre do Windows: " + falha;
+                    return;
+                }
+
+                // Nada guardado nesta maquina: agora sim, o caminho do navegador.
+                if (conta is null)
+                {
+                    RefreshGitHubStatus();
+                    SignInToGitHub();
+                    return;
+                }
+
+                AdoptConnection(conta.Origem);
+            });
+        });
+    }
+
+    /// <summary>
+    /// Entrar no GitHub pela janela — navegador, GitHub CLI ou a conta do Git.
+    ///
+    /// O token vai para o cofre do Windows sem passar por arquivo nem pela tela;
+    /// o que fica na configuracao continua sendo so o NOME da credencial.
+    /// </summary>
+    private void SignInToGitHub()
+    {
+        using var janela = new GitHubSignInForm(
+            _credentials,
+            GitHubConnection.ClientIdEmVigor(_options.GitHub.ClientId));
 
         if (janela.ShowDialog(this) != DialogResult.OK) return;
 
@@ -470,10 +528,19 @@ public sealed class ConfigPanel : UserControl
         if (janela.ClientIdInformado is { Length: > 0 } clientId && clientId != _options.GitHub.ClientId)
             _options.GitHub.ClientId = clientId;
 
-        // A conexao e da maquina, nao de cada jogo: ela vai para os padroes, e os
-        // projetos herdam. As credenciais por projeto que existiam antes saem do
-        // caminho — quem precisar de uma conta diferente num projeto especifico
-        // volta a preencher o campo dele.
+        AdoptConnection("a conta que você autorizou");
+    }
+
+    /// <summary>
+    /// Aponta a maquina inteira para a credencial recem-guardada.
+    ///
+    /// A conexao e da maquina, nao de cada jogo: ela vai para os padroes e os
+    /// projetos herdam. As credenciais por projeto que existiam antes saem do
+    /// caminho — quem precisar de outra conta num projeto especifico volta a
+    /// preencher o campo dele.
+    /// </summary>
+    private void AdoptConnection(string origem)
+    {
         _options.Defaults.Repository.PatCredentialName = GitHubConnection.CredentialName;
 
         var comCredencialPropria = _options.Projects
@@ -483,6 +550,8 @@ public sealed class ConfigPanel : UserControl
         foreach (var projeto in comCredencialPropria)
             projeto.Repository!.PatCredentialName = null;
 
+        _githubGrid.Refresh();
+        RefreshGitHubStatus();
         ShowSelectedProject();
 
         // A lista de branches de todos eles muda agora que ha acesso.
@@ -495,7 +564,7 @@ public sealed class ConfigPanel : UserControl
 
         MessageBox.Show(
             this,
-            "Conectado ao GitHub." + Environment.NewLine + Environment.NewLine +
+            $"Conectado ao GitHub usando {origem}." + Environment.NewLine + Environment.NewLine +
             $"O acesso vale para a máquina inteira, na credencial '{GitHubConnection.CredentialName}'. " +
             "Todos os projetos passam a usá-lo — não é preciso configurar por jogo." +
             (comCredencialPropria.Count > 0
@@ -503,7 +572,7 @@ public sealed class ConfigPanel : UserControl
                   $"{comCredencialPropria.Count} projeto(s) tinham credencial própria e passaram a herdar esta."
                 : "") +
             Environment.NewLine + Environment.NewLine +
-            "Falta salvar para valer.",
+            "Use 'Testar acesso' para confirmar no servidor, e salve para valer.",
             "UnityLocalCI", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 

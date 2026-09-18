@@ -11,6 +11,34 @@ internal static class GitHubConnection
     /// </summary>
     public const string CredentialName = "UnityLocalCI_GitHub";
 
+    /// <summary>
+    /// Client ID embutido no programa, como o GitHub Desktop faz.
+    ///
+    /// O GitHub Desktop nao pede Client ID a ninguem porque ele e um OAuth App
+    /// registrado e carrega o proprio id aqui dentro — o id e publico, o fluxo
+    /// de dispositivo nao usa client secret. Para ficar igual, basta registrar
+    /// um OAuth App uma vez (github.com/settings/applications/new, com
+    /// 'Enable Device Flow' marcado) e colar o id nesta linha: a partir dai
+    /// ninguem mais ve este campo.
+    ///
+    /// Usar o id de outro programa — o do proprio GitHub Desktop, o do gh —
+    /// seria se passar por ele para o servidor e para quem autoriza. Entao esta
+    /// constante nasce vazia, e o Client ID continua podendo vir da
+    /// configuracao enquanto nao houver um App registrado.
+    /// </summary>
+    public const string BuiltInClientId = "";
+
+    /// <summary>
+    /// O Client ID que vale: o da configuracao ganha do embutido, para uma
+    /// maquina poder apontar para outro OAuth App sem recompilar.
+    /// </summary>
+    public static string? ClientIdEmVigor(string? daConfiguracao)
+    {
+        if (!string.IsNullOrWhiteSpace(daConfiguracao)) return daConfiguracao.Trim();
+
+        return string.IsNullOrWhiteSpace(BuiltInClientId) ? null : BuiltInClientId.Trim();
+    }
+
     public static bool IsGitHub(string? url)
         => url is not null && url.Contains("github.com", StringComparison.OrdinalIgnoreCase);
 }

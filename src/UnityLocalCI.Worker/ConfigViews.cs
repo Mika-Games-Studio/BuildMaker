@@ -156,11 +156,13 @@ public sealed class GitHubView(CiOptions options)
     }
 
     [Category("Entrar pelo navegador")]
-    [DisplayName("Client ID do OAuth App")]
+    [DisplayName("Client ID do OAuth App (opcional)")]
     [Description(
-        "É assim que o GitHub Desktop funciona: ele é um OAuth App registrado, com o Client ID embutido. " +
-        "Registre um para a empresa uma vez e cole aqui — ele é público, o fluxo de dispositivo não usa " +
-        "client secret. Vazio ainda permite entrar pela conta que o Git ou o GitHub CLI já guardaram.")]
+        "Só é preciso numa máquina que não tenha NENHUMA conta guardada — quando o Git e o GitHub CLI não " +
+        "respondem e sobra o navegador. O GitHub Desktop não pergunta isso porque é um OAuth App registrado " +
+        "com o Client ID embutido; para ficar igual, registre um em github.com/settings/applications/new " +
+        "com 'Enable Device Flow' e cole aqui (ou na constante BuiltInClientId, e aí ninguém mais vê este " +
+        "campo). O Client ID é público: não é segredo.")]
     public string? ClientId
     {
         get => _github.ClientId;
