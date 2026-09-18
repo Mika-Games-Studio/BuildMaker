@@ -17,6 +17,9 @@ public static class ProjectDraft
     public const string DefaultWorkspaceRoot = @"C:\ci\workspace";
     public const string DefaultTriggerRoot = @"C:\ci\triggers";
 
+    /// <summary>Alvo do build de quem nao escolher outro.</summary>
+    public const string DefaultBuildTarget = "WebGL";
+
     /// <summary>O que foi possivel descobrir sobre a pasta escolhida.</summary>
     public sealed record Result(ProjectOptions Project, string? EditorVersion, LocalRepository? Repository)
     {
@@ -58,7 +61,10 @@ public static class ProjectDraft
             },
 
             ManualTriggerFile = Path.Combine(RootOf(existing.Select(p => p.ManualTriggerFile), DefaultTriggerRoot), nome + ".txt"),
-            Unity = versao is null ? null : new UnityOptions { EditorVersion = versao },
+
+            // WebGL explicito: e o alvo deste time, e ver a plataforma escrita
+            // no cadastro evita a duvida de "sera que herdou o que eu acho?".
+            Unity = new UnityOptions { EditorVersion = versao, BuildTarget = DefaultBuildTarget },
             Publishing = new PublishingOptions(),
         };
 

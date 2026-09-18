@@ -174,6 +174,35 @@ public sealed class BranchConverter : StringConverter
 }
 
 /// <summary>
+/// Plataformas do build oferecidas como lista, com WebGL na frente por ser a
+/// deste time.
+///
+/// Nao exclusiva: o Unity tem alguma dezena de alvos, e travar a escolha nos
+/// seis daqui impediria de configurar um projeto para um alvo legitimo que nao
+/// esta nesta lista. Ela existe para acertar a grafia — 'WebGl' ou 'webgl' nao
+/// sao aceitos pelo Unity CLI, e o erro so apareceria na primeira build.
+/// </summary>
+public sealed class BuildTargetConverter : StringConverter
+{
+    /// <summary>O primeiro e o padrao do projeto todo.</summary>
+    public static readonly string[] Alvos =
+    [
+        "WebGL",
+        "StandaloneWindows64",
+        "StandaloneOSX",
+        "StandaloneLinux64",
+        "Android",
+        "iOS",
+    ];
+
+    public override bool GetStandardValuesSupported(ITypeDescriptorContext? context) => true;
+
+    public override bool GetStandardValuesExclusive(ITypeDescriptorContext? context) => false;
+
+    public override StandardValuesCollection GetStandardValues(ITypeDescriptorContext? context) => new(Alvos);
+}
+
+/// <summary>
 /// Achata o projeto para o PropertyGrid: sem isto, Repository, Unity e
 /// Publishing apareceriam como sub-objetos que o usuario precisa expandir um a
 /// um, e os campos herdados de Defaults nao teriam explicacao nenhuma.
@@ -185,16 +214,20 @@ public sealed class ProjectView
     private readonly PublishingOptions _publishing;
 
     private readonly BranchCatalog? _branches;
+    private readonly ProjectDefaults? _defaults;
 
     private string? _detectedFor;
     private string? _detected;
 
-    public ProjectView(ProjectOptions project) : this(project, null) { }
+    public ProjectView(ProjectOptions project) : this(project, null, null) { }
 
-    public ProjectView(ProjectOptions project, BranchCatalog? branches)
+    public ProjectView(ProjectOptions project, BranchCatalog? branches) : this(project, branches, null) { }
+
+    public ProjectView(ProjectOptions project, BranchCatalog? branches, ProjectDefaults? defaults)
     {
         _project = project;
         _branches = branches;
+        _defaults = defaults;
 
         // Guardados em campos nao-anulaveis: as sobrescritas por projeto sao
         // opcionais na configuracao, mas a tela sempre tem onde escrever.
@@ -228,8 +261,18 @@ public sealed class ProjectView
         return _detected;
     }
 
+    /// <summary>
+    /// So leitura, e de proposito.
+    ///
+    /// O nome nao e um rotulo: ele identifica a fila, da nome ao arquivo de
+    /// configuracao, ao arquivo de gatilho e a pasta de workspace, e e a chave
+    /// do historico de builds no banco. Renomear aqui deixaria o historico
+    /// orfao e o gatilho apontando para o nome velho, tudo em silencio. Ele e
+    /// definido uma vez, ao vincular o projeto.
+    /// </summary>
     [Category("Projeto")]
-    [Description("Identifica a fila, o estado e aparece nos arquivos de status. Precisa ser único.")]
+    [ReadOnly(true)]
+    [Description("Definido ao vincular o projeto. Identifica a fila, o histórico, o arquivo de configuração e o gatilho — por isso não muda depois.")]
     public string Name
     {
         get => _project.Name;
@@ -290,16 +333,44 @@ public sealed class ProjectView
         }
     }
 
-    [Category("Repositório")]
-    [DisplayName("PatCredentialName (exceção)")]
-    [Description(
-        "Deixe VAZIO no caso normal: o acesso ao Git é da máquina, e vem de 'Conectar ao GitHub'. " +
-        "Só preencha se ESTE projeto precisar de outra conta ou outra organização — e aqui vai o NOME " +
-        "da credencial no cofre do Windows, nunca o token.")]
+    /// <summary>
+    /// Fora da grade: o valor continua existindo na configuracao e no codigo,
+    /// mas quem edita e o botao "Conectar ao GitHub", nao o usuario digitando.
+    /// </summary>
+    [Browsable(false)]
     public string? PatCredentialName
     {
         get => _repository.PatCredentialName;
         set => _repository.PatCredentialName = Texto.OuNulo(value);
+    }
+
+    /// <summary>
+    /// A credencial que este projeto vai usar de verdade, so para ver.
+    ///
+    /// Mostra tambem DE ONDE ela vem: a diferenca entre "a maquina esta
+    /// conectada" e "este projeto tem uma excecao" e justamente o que alguem
+    /// precisa saber quando um projeto falha no clone e o outro nao.
+    /// </summary>
+    [Category("Repositório")]
+    [DisplayName("Credencial")]
+    [ReadOnly(true)]
+    [Description(
+        "Preenchida pelo botão 'Conectar ao GitHub'. O acesso ao Git é da máquina, não de cada jogo. " +
+        "Um projeto só precisa de credencial própria se viver em outra conta ou organização — e isso se " +
+        "ajusta no arquivo dele, em projetos\\<nome>.json.")]
+    public string Credencial
+    {
+        get
+        {
+            if (!string.IsNullOrWhiteSpace(_repository.PatCredentialName))
+                return _repository.PatCredentialName + "  (exceção deste projeto)";
+
+            var daMaquina = _defaults?.Repository.PatCredentialName;
+
+            return string.IsNullOrWhiteSpace(daMaquina)
+                ? "(sem conexão — use 'Conectar ao GitHub')"
+                : daMaquina + "  (conexão da máquina)";
+        }
     }
 
     [Category("Unity")]
@@ -329,14 +400,15 @@ public sealed class ProjectView
         => Detect(_repository.WorkspacePath) ?? "(workspace ainda não clonado)";
 
     [Category("Unity")]
-    [Description("Plataforma do build. Vazio herda de Defaults (WebGL).")]
+    [Description("Plataforma do build. Vazio herda de Defaults, que vem como WebGL.")]
+    [TypeConverter(typeof(BuildTargetConverter))]
     public string? BuildTarget
     {
         get => _project.Unity?.BuildTarget;
         set
         {
             _project.Unity ??= new UnityOptions();
-            _project.Unity.BuildTarget = string.IsNullOrWhiteSpace(value) ? null : value;
+            _project.Unity.BuildTarget = Texto.OuNulo(value);
         }
     }
 

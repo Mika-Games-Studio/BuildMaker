@@ -220,7 +220,7 @@ public sealed class ConfigPanel : UserControl
         }
 
         var project = _options.Projects[index];
-        _projectGrid.SelectedObject = new ProjectView(project, _branches);
+        _projectGrid.SelectedObject = new ProjectView(project, _branches, _options.Defaults);
 
         // A lista de branches e buscada em segundo plano; quando o usuario abrir
         // o dropdown, ela ja estara la. Nada aqui espera pela rede.
@@ -415,13 +415,35 @@ public sealed class ConfigPanel : UserControl
             "UnityLocalCI", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 
+    /// <summary>
+    /// Projeto em branco. O nome e perguntado aqui porque ele nao e editavel
+    /// depois: e ele que identifica a fila, o arquivo de configuracao, o gatilho
+    /// e o historico.
+    /// </summary>
     private void AddProject()
     {
+        var nome = TextPrompt.Ask(
+            this,
+            "Novo projeto",
+            "Nome do projeto. Ele identifica a fila, o arquivo de configuração, o gatilho e o histórico — " +
+            "e não muda depois.");
+
+        if (nome is null) return;
+
+        if (_options.Projects.Any(p => string.Equals(p.Name, nome, StringComparison.OrdinalIgnoreCase)))
+        {
+            MessageBox.Show(
+                this, $"Já existe um projeto chamado '{nome}'.",
+                "UnityLocalCI", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
         _options.Projects.Add(new ProjectOptions
         {
-            Name = "NovoProjeto",
+            Name = nome,
             Enabled = false,
             Repository = new RepositoryOptions { Branch = "HML" },
+            Unity = new UnityOptions { BuildTarget = BuildTargetConverter.Alvos[0] },
             Publishing = new PublishingOptions(),
         });
 
