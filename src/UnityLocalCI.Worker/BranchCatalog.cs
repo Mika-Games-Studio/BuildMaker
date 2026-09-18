@@ -27,12 +27,22 @@ namespace UnityLocalCI.App;
 public sealed class BranchCatalog
 {
     private readonly ICredentialStore _credentials;
+    private readonly IGitClient _git;
     private readonly object _gate = new();
 
     private readonly Dictionary<string, IReadOnlyList<string>> _porRepositorio = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _emAndamento = new(StringComparer.OrdinalIgnoreCase);
 
-    public BranchCatalog(ICredentialStore credentials) => _credentials = credentials;
+    public BranchCatalog(ICredentialStore credentials, IGitClient? git = null)
+    {
+        _credentials = credentials;
+
+        // Cliente proprio, e nao o do host: esta tela funciona com o servico
+        // parado, que e exatamente quando alguem esta configurando.
+        _git = git ?? new GitClient(
+            new ProcessRunner(NullLogger<ProcessRunner>.Instance),
+            NullLogger<GitClient>.Instance);
+    }
 
     /// <summary>Avisa que a lista de um repositorio mudou. Chamado fora da thread da janela.</summary>
     public event Action<string>? Updated;
@@ -74,7 +84,12 @@ public sealed class BranchCatalog
     /// Garante que a lista deste projeto esta sendo carregada. Volta na hora; o
     /// resultado aparece quando chegar.
     /// </summary>
-    public void EnsureLoaded(ProjectOptions project, bool force = false)
+    /// <param name="defaults">
+    /// Padroes da maquina, para a credencial herdada valer aqui tambem. Sem
+    /// isto, a listagem tentaria sem token justamente nos projetos que nao
+    /// definem credencial propria — que passaram a ser todos.
+    /// </param>
+    public void EnsureLoaded(ProjectOptions project, ProjectDefaults defaults, bool force = false)
     {
         var url = project.Repository?.Url;
         if (string.IsNullOrWhiteSpace(url)) return;
@@ -88,29 +103,28 @@ public sealed class BranchCatalog
         }
 
         var workspace = project.Repository?.WorkspacePath;
-        var credencial = project.Repository?.PatCredentialName;
+        var credencial = ProjectResolver.ResolveCredential(project, defaults);
 
         _ = Task.Run(() => CarregarAsync(url, workspace, credencial));
     }
 
     private async Task CarregarAsync(string url, string? workspace, string? credentialName)
     {
-        var encontradas = new List<string>();
+        // O que o clone conhece de origin. Nunca branch local: o CI observa o
+        // que esta no servidor, e uma branch que so existe na maquina de alguem
+        // nao tem como disparar build nenhuma.
+        var doClone = LocalRepositoryInfo.ReadKnownBranches(workspace);
+        var resultado = doClone;
 
         try
         {
-            // Primeiro o disco: responde na hora, e se a rede falhar o usuario
-            // ainda fica com algo util em vez de uma lista vazia.
-            encontradas.AddRange(LocalRepositoryInfo.ReadKnownBranches(workspace));
-            Publicar(url, encontradas, concluido: false);
+            // Resposta provisoria, para o dropdown nao ficar vazio enquanto a
+            // rede nao volta.
+            Publicar(url, doClone, concluido: false);
 
             var pat = string.IsNullOrWhiteSpace(credentialName) ? null : _credentials.Read(credentialName);
 
-            var git = new GitClient(
-                new ProcessRunner(NullLogger<ProcessRunner>.Instance),
-                NullLogger<GitClient>.Instance);
-
-            var remotas = await git.ListRemoteBranchesAsync(
+            var remotas = await _git.ListRemoteBranchesAsync(
                 new GitContext
                 {
                     WorkspacePath = workspace ?? "",
@@ -120,18 +134,21 @@ public sealed class BranchCatalog
                 },
                 CancellationToken.None).ConfigureAwait(false);
 
-            encontradas.AddRange(remotas);
+            // SUBSTITUI, nao soma: o servidor e a verdade. O clone guarda refs de
+            // origin que ja foram apagadas la, e some-las traria de volta branch
+            // que nao existe mais — justamente o erro que a lista veio evitar.
+            resultado = remotas;
         }
         catch (Exception)
         {
-            // Sem rede, sem credencial ou URL errada: fica o que veio do disco.
+            // Sem rede, sem credencial ou URL errada: fica o que o clone sabia.
             // Esta lista e uma comodidade; ela nunca pode virar um erro na cara
             // de quem esta so preenchendo a configuracao.
         }
         finally
         {
             lock (_gate) _emAndamento.Remove(url);
-            Publicar(url, encontradas, concluido: true);
+            Publicar(url, resultado, concluido: true);
         }
     }
 

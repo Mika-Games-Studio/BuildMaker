@@ -75,11 +75,19 @@ public sealed class CiOptionsValidator : IValidateOptions<CiOptions>
             if (resolved.Retention.KeepLastBuilds < 1)
                 errors.Add($"[{label}] Retention.KeepLastBuilds precisa ser no minimo 1.");
 
-            if (!string.IsNullOrWhiteSpace(project.Repository.PatCredentialName)
-                && !_credentials.Exists(project.Repository.PatCredentialName!))
+            // A credencial resolvida: a do projeto, ou a da maquina que ele
+            // herda. Validar so a do projeto deixava passar uma conexao da
+            // maquina apontando para credencial inexistente.
+            if (ProjectResolver.ResolveCredential(project, options.Defaults) is { } credencial
+                && !_credentials.Exists(credencial))
             {
-                errors.Add($"[{label}] a credencial '{project.Repository.PatCredentialName}' nao existe no Windows Credential Manager. " +
-                           $"Grave com: cmdkey /generic:{project.Repository.PatCredentialName} /user:pat /pass:<PAT>");
+                var origem = string.IsNullOrWhiteSpace(project.Repository.PatCredentialName)
+                    ? "a conexão da máquina usa"
+                    : "o projeto usa";
+
+                errors.Add($"[{label}] {origem} a credencial '{credencial}', que nao existe no Windows Credential Manager. " +
+                           "Use 'Conectar ao GitHub' na tela de configuracao, ou grave com: " +
+                           $"cmdkey /generic:{credencial} /user:pat /pass:<PAT>");
             }
         }
 

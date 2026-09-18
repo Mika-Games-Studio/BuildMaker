@@ -115,7 +115,7 @@ public sealed class ConfigPanel : UserControl
             if (propriedade is nameof(ProjectView.Url) or nameof(ProjectView.PatCredentialName)
                 && SelectedProject() is { } projeto)
             {
-                _branches.EnsureLoaded(projeto, force: true);
+                _branches.EnsureLoaded(projeto, _options.Defaults, force: true);
             }
         };
 
@@ -224,7 +224,7 @@ public sealed class ConfigPanel : UserControl
 
         // A lista de branches e buscada em segundo plano; quando o usuario abrir
         // o dropdown, ela ja estara la. Nada aqui espera pela rede.
-        _branches.EnsureLoaded(project);
+        _branches.EnsureLoaded(project, _options.Defaults);
         ReportBranches(project.Repository?.Url);
     }
 
@@ -291,12 +291,18 @@ public sealed class ConfigPanel : UserControl
         if (janela.ClientIdInformado is { Length: > 0 } clientId && clientId != _options.GitHub.ClientId)
             _options.GitHub.ClientId = clientId;
 
-        var doGitHub = _options.Projects
-            .Where(p => GitHubConnection.IsGitHub(p.Repository?.Url))
+        // A conexao e da maquina, nao de cada jogo: ela vai para os padroes, e os
+        // projetos herdam. As credenciais por projeto que existiam antes saem do
+        // caminho — quem precisar de uma conta diferente num projeto especifico
+        // volta a preencher o campo dele.
+        _options.Defaults.Repository.PatCredentialName = GitHubConnection.CredentialName;
+
+        var comCredencialPropria = _options.Projects
+            .Where(p => !string.IsNullOrWhiteSpace(p.Repository?.PatCredentialName))
             .ToList();
 
-        foreach (var projeto in doGitHub)
-            (projeto.Repository ??= new RepositoryOptions()).PatCredentialName = GitHubConnection.CredentialName;
+        foreach (var projeto in comCredencialPropria)
+            projeto.Repository!.PatCredentialName = null;
 
         ShowSelectedProject();
 
@@ -304,16 +310,19 @@ public sealed class ConfigPanel : UserControl
         _branches.Clear();
         if (SelectedProject() is { } atual)
         {
-            _branches.EnsureLoaded(atual, force: true);
+            _branches.EnsureLoaded(atual, _options.Defaults, force: true);
             ReportBranches(atual.Repository?.Url);
         }
 
         MessageBox.Show(
             this,
             "Conectado ao GitHub." + Environment.NewLine + Environment.NewLine +
-            (doGitHub.Count == 0
-                ? "Nenhum projeto do GitHub cadastrado ainda; o acesso já fica guardado para quando houver."
-                : $"{doGitHub.Count} projeto(s) passaram a usar a credencial '{GitHubConnection.CredentialName}'.") +
+            $"O acesso vale para a máquina inteira, na credencial '{GitHubConnection.CredentialName}'. " +
+            "Todos os projetos passam a usá-lo — não é preciso configurar por jogo." +
+            (comCredencialPropria.Count > 0
+                ? Environment.NewLine + Environment.NewLine +
+                  $"{comCredencialPropria.Count} projeto(s) tinham credencial própria e passaram a herdar esta."
+                : "") +
             Environment.NewLine + Environment.NewLine +
             "Falta salvar para valer.",
             "UnityLocalCI", MessageBoxButtons.OK, MessageBoxIcon.Information);

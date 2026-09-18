@@ -145,3 +145,34 @@ public static class TestProjects
             Publishing: new ResolvedPublishing(staging, artifactFolder, true, true),
             Retention: new ResolvedRetention(10, minFreeDiskGb));
 }
+
+/// <summary>
+/// Cliente de git que so registra o que foi pedido. Serve para provar de qual
+/// credencial a tela de configuracao se serve, sem tocar em rede.
+/// </summary>
+public sealed class CapturingGitClient : IGitClient
+{
+    public ManualResetEventSlim Chamado { get; } = new(false);
+    public GitContext? UltimoContexto { get; private set; }
+    public List<string> Branches { get; } = ["main"];
+
+    public Task<SyncOutcome> EnsureWorkspaceAsync(GitContext context, CancellationToken ct)
+        => Task.FromResult(new SyncOutcome(false));
+
+    public Task FetchAsync(GitContext context, CancellationToken ct) => Task.CompletedTask;
+
+    public Task<string> GetRemoteHeadShaAsync(GitContext context, CancellationToken ct)
+        => Task.FromResult(new string('a', 40));
+
+    public Task<CommitInfo> GetCommitInfoAsync(GitContext context, string sha, CancellationToken ct)
+        => Task.FromResult(new CommitInfo(sha, "autor", "mensagem"));
+
+    public Task CheckoutAsync(GitContext context, string sha, CancellationToken ct) => Task.CompletedTask;
+
+    public Task<IReadOnlyList<string>> ListRemoteBranchesAsync(GitContext context, CancellationToken ct)
+    {
+        UltimoContexto = context;
+        Chamado.Set();
+        return Task.FromResult<IReadOnlyList<string>>(Branches.ToArray());
+    }
+}

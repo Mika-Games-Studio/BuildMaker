@@ -195,7 +195,17 @@ A versão do editor também é relida **sempre que o `WorkspacePath` é escolhid
 
 Os arquivos do Git e o `ProjectVersion.txt` são **lidos direto, sem invocar o `git`**: isso roda na thread da interface, ao lado de uma caixa de diálogo, e um processo externo ali travaria a janela.
 
-O campo **Branch é uma lista**, montada de duas fontes: os refs do clone local, lidos do disco (respondem na hora, servem offline e sem credencial), e `git ls-remote` no servidor, que traz também as branches criadas depois do último fetch. A consulta ao servidor roda fora da thread da janela. A lista **não é exclusiva** — dá para digitar uma branch que ainda não existe, porque cadastrar o projeto antes de criar a branch de homologação é normal.
+O campo **Branch é uma lista**, e ela traz **apenas branches de `origin`** — nunca branches locais: o CI observa o que está no servidor, e uma branch que só existe na máquina de alguém não dispara build nenhuma.
+
+São duas fontes, nesta ordem: os refs de `origin` que o clone já conhece, lidos do disco (respondem na hora, servem offline e sem credencial), e `git ls-remote` no servidor. Quando o servidor responde, a lista dele **substitui** a do clone, e não soma — o clone guarda refs de `origin` que já foram apagadas lá até alguém podar, e somá-las traria de volta branch que não existe mais. A consulta ao servidor roda fora da thread da janela. A lista **não é exclusiva**: dá para digitar uma branch que ainda não existe, porque cadastrar o projeto antes de criar a branch de homologação é normal.
+
+### A conexão com o Git é da máquina, não de cada jogo
+
+A credencial mora em **`Defaults.Repository.PatCredentialName`**, e todo projeto a herda. É o que o botão **Conectar ao GitHub** preenche: conecta uma vez, vale para todos os projetos.
+
+O campo `PatCredentialName` de cada projeto continua existindo, mas como **exceção** — só para um projeto que viva em outra organização ou outra conta. Vazio (ou apagado) herda a conexão da máquina; tratar vazio diferente de ausente faria "apagar para herdar" virar "ficar sem credencial".
+
+A validação olha a credencial **resolvida**. Conferindo só a do projeto, uma conexão de máquina apontando para credencial inexistente passaria batido, e a falha apareceria no primeiro clone.
 
 > **Lista vazia quase sempre é falta de acesso**, não ausência de branches: sem clone local e sem credencial válida, não há de onde tirar os nomes. A linha de mensagem diz qual repositório falhou; **Conectar ao GitHub** resolve.
 
@@ -229,7 +239,6 @@ Fechar pelo **X esconde na bandeja** e o serviço continua construindo. Sair de 
 Tudo que precisa ser preenchido antes do primeiro uso real. Nada disso foi inventado.
 
 | Placeholder | Onde | O que é |
-|---|---|---|
 | `PREENCHER-NOME-DO-PROJETO` | `Projects[].Name` | Nome do projeto. Identifica a fila, o estado e aparece nos arquivos de status. |
 | `PREENCHER-NOME-DO-PROJETO` | `Projects[].Repository.WorkspacePath` | Última pasta do caminho do workspace. |
 | `PREENCHER-NOME-DO-PROJETO` | `Projects[].ManualTriggerFile` | Nome do arquivo de gatilho manual. |
@@ -239,7 +248,7 @@ Tudo que precisa ser preenchido antes do primeiro uso real. Nada disso foi inven
 | `PREENCHER-DESTINO-RAIZ` | `Scheduler.GlobalStatusFile` | Raiz do compartilhamento, onde vai o `_STATUS-GERAL.txt`. |
 | `PREENCHER-NOME-DO-PROJETO` | `tools/post-merge.hook` | Nome do projeto no hook, se for usá-lo. |
 
-Valores que já vêm prontos e você provavelmente quer conferir: `Branch` (`HML`), `PatCredentialName` (`UnityLocalCI_AzureDevOpsPat`), e os caminhos locais em `C:\ci\` (workspace, staging, state, logs, triggers).
+Valores que já vêm prontos e você provavelmente quer conferir: `Branch` (`HML`) e os caminhos locais em `C:\ci\` (workspace, staging, state, logs, triggers). A credencial não está nessa lista porque **não é por projeto**: ela mora em `Defaults.Repository.PatCredentialName` e é preenchida pelo botão **Conectar ao GitHub**.
 
 > **Os caminhos usam `C:\ci\`, não `D:\ci\` como na especificação**, porque esta máquina só tem o drive C:. Se a máquina de build tiver um D:, troque nos quatro lugares: `State.DatabasePath`, `State.LogFolder`, `Defaults.Publishing.StagingFolder` e `Projects[].Repository.WorkspacePath`.
 

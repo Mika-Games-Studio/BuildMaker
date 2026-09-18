@@ -118,6 +118,63 @@ public class BranchListingTests : IDisposable
         Assert.Equal(["main", "mines-fortune-stg"], LocalRepositoryInfo.ReadKnownBranches(_raiz));
     }
 
+    /// <summary>
+    /// Branch local nunca entra na lista. O CI observa o que esta no servidor;
+    /// uma branch que so existe na maquina de alguem nao dispara build nenhuma,
+    /// e oferece-la e um convite a configurar um projeto que nunca vai rodar.
+    /// </summary>
+    [Fact]
+    public void Branch_local_nao_entra_na_lista()
+    {
+        var git = Path.Combine(_raiz, ".git");
+        var locais = Path.Combine(git, "refs", "heads");
+        var remotos = Path.Combine(git, "refs", "remotes", "origin");
+
+        Directory.CreateDirectory(locais);
+        Directory.CreateDirectory(remotos);
+
+        File.WriteAllText(Path.Combine(locais, "minha-experiencia"), new string('a', 40));
+        File.WriteAllText(Path.Combine(locais, "main"), new string('b', 40));
+        File.WriteAllText(Path.Combine(remotos, "main"), new string('b', 40));
+
+        Assert.Equal(["main"], LocalRepositoryInfo.ReadKnownBranches(_raiz));
+    }
+
+    /// <summary>
+    /// O clone guarda refs de origin que ja sumiram do servidor ate alguem
+    /// podar. Somar as duas fontes traria de volta branch apagada — o oposto do
+    /// que a lista veio evitar.
+    /// </summary>
+    [Fact]
+    public void Resposta_do_servidor_substitui_o_que_o_clone_sabia()
+    {
+        var remotos = Path.Combine(_raiz, ".git", "refs", "remotes", "origin");
+        Directory.CreateDirectory(remotos);
+        File.WriteAllText(Path.Combine(remotos, "branch-apagada-no-servidor"), new string('a', 40));
+        File.WriteAllText(Path.Combine(remotos, "main"), new string('b', 40));
+
+        var git = new CapturingGitClient();
+        git.Branches.Clear();
+        git.Branches.AddRange(["main", "crash-aviaturbo-hml"]);
+
+        var catalogo = new BranchCatalog(new FakeCredentialStore(), git);
+
+        const string url = "https://github.com/OPAGames/CrashUnity.git";
+        var pronto = new ManualResetEventSlim(false);
+        catalogo.Updated += _ => { if (!catalogo.IsLoading(url)) pronto.Set(); };
+
+        catalogo.EnsureLoaded(
+            new ProjectOptions
+            {
+                Name = "CrashUnity",
+                Repository = new RepositoryOptions { Url = url, WorkspacePath = _raiz },
+            },
+            new ProjectDefaults());
+
+        Assert.True(pronto.Wait(TimeSpan.FromSeconds(5)), "a listagem nao terminou");
+        Assert.Equal(["crash-aviaturbo-hml", "main"], catalogo.Known(url));
+    }
+
     [Fact]
     public void Pasta_sem_repositorio_nao_tem_branch_nenhuma()
     {

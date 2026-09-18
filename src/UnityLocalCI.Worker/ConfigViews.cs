@@ -40,6 +40,7 @@ public sealed class GeneralView(CiOptions options)
     private readonly UnityOptions _unity = options.Defaults.Unity;
     private readonly PublishingOptions _publishing = options.Defaults.Publishing;
     private readonly GitHubOptions _github = options.GitHub;
+    private readonly RepositoryDefaults _repository = options.Defaults.Repository;
 
     // ------------------------------------------------------------------ fila
 
@@ -129,6 +130,17 @@ public sealed class GeneralView(CiOptions options)
     {
         get => _unity.BuildTarget;
         set => _unity.BuildTarget = Texto.OuNulo(value);
+    }
+
+    [Category("GitHub")]
+    [DisplayName("Credencial da máquina")]
+    [Description(
+        "Nome da credencial no cofre do Windows usada por TODOS os projetos que não definirem a própria. " +
+        "É o que o botão 'Conectar ao GitHub' preenche — o acesso ao Git é da máquina, não de cada jogo.")]
+    public string? CredencialDaMaquina
+    {
+        get => _repository.PatCredentialName;
+        set => _repository.PatCredentialName = Texto.OuNulo(value);
     }
 
     [Category("GitHub")]
@@ -279,7 +291,11 @@ public sealed class ProjectView
     }
 
     [Category("Repositório")]
-    [Description("NOME da credencial no Gerenciador de Credenciais do Windows, nunca o PAT. Grave o valor com cmdkey ou tools\\set-secrets.ps1.")]
+    [DisplayName("PatCredentialName (exceção)")]
+    [Description(
+        "Deixe VAZIO no caso normal: o acesso ao Git é da máquina, e vem de 'Conectar ao GitHub'. " +
+        "Só preencha se ESTE projeto precisar de outra conta ou outra organização — e aqui vai o NOME " +
+        "da credencial no cofre do Windows, nunca o token.")]
     public string? PatCredentialName
     {
         get => _repository.PatCredentialName;
