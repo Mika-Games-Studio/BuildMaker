@@ -96,7 +96,7 @@ public static class ServiceRegistration
         services.AddHostedService<StartupService>();
         services.AddHostedService(sp => sp.GetRequiredService<BuildScheduler>());
 
-        AddPerProjectWatchers(services, configuration);
+        AddPerProjectWatchers(services, configuration, pastaDeProjetos);
 
         services.AddHostedService<SignalListener>();
         services.AddHostedService<PendingCopyRetryWorker>();
@@ -106,10 +106,23 @@ public static class ServiceRegistration
     /// Um GitWatcher e um ManualTriggerWatcher por projeto habilitado, com o
     /// polling espacado na inicializacao para que N projetos nao disparem
     /// 'git fetch' no mesmo instante.
+    ///
+    /// A lista de projetos e montada aqui do mesmo jeito que no PostConfigure,
+    /// e nao so pelo binder: desde que cada projeto virou um arquivo proprio, a
+    /// secao 'Projects' do appsettings nao existe mais. Ler so o binder deixava
+    /// esta lista vazia — o servico subia dizendo "1 projeto(s)", porque o
+    /// StartupService le as opcoes ja configuradas, e mesmo assim nao observava
+    /// nada: nem commit novo, nem gatilho manual.
     /// </summary>
-    private static void AddPerProjectWatchers(IServiceCollection services, IConfiguration configuration)
+    private static void AddPerProjectWatchers(
+        IServiceCollection services, IConfiguration configuration, string pastaDeProjetos)
     {
         var configured = configuration.Get<CiOptions>() ?? new CiOptions();
+
+        var daPasta = ProjectFiles.LoadAll(pastaDeProjetos);
+        if (daPasta.Count > 0 || Directory.Exists(pastaDeProjetos))
+            configured.Projects = daPasta.ToList();
+
         var projects = ProjectResolver.ResolveEnabled(configured);
 
         for (var index = 0; index < projects.Count; index++)

@@ -1,0 +1,7 @@
+﻿CI LOCAL — 21/09/2026 17:31
+
+PROJETO       ESTADO       ÚLTIMA BUILD     COMMIT  ARQUIVO
+CrashUnity    —            nunca            —       —
+HumanXRobots  construindo  (iniciou 17:31)  —       —
+
+Fila: 0 aguardando  |  Em execução: 1 de 2
