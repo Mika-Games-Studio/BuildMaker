@@ -137,7 +137,19 @@ if (Test-Path $configExistente) {
 }
 
 New-Item -ItemType Directory -Path $Destino -Force | Out-Null
-Copy-Item (Join-Path $Origem '*') $Destino -Recurse -Force
+Copy-Item (Join-Path $Origem '*') $Destino -Recurse -Force -Exclude 'projetos'
+
+# A pasta com um arquivo por projeto e do usuario, nunca do pacote: uma
+# atualizacao que a sobrescrevesse apagaria a configuracao dos projetos.
+$projetosNoPacote = Join-Path $Origem 'projetos'
+$projetosInstalados = Join-Path $Destino 'projetos'
+if ((Test-Path $projetosNoPacote) -and -not (Test-Path $projetosInstalados)) {
+    Copy-Item $projetosNoPacote $Destino -Recurse -Force
+}
+if (Test-Path $projetosInstalados) {
+    $quantos = @(Get-ChildItem $projetosInstalados -Filter *.json -ErrorAction SilentlyContinue).Count
+    Aviso "$quantos projeto(s) preservados em projetos\"
+}
 
 if ($preservada) { Set-Content -Path $configExistente -Value $preservada -Encoding utf8 -NoNewline }
 

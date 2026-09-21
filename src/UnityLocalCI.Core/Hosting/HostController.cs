@@ -107,6 +107,10 @@ public sealed class HostController : IAsyncDisposable
 
     private IHost Build()
     {
+        // Uma vez, e so na primeira vez: projetos que ainda estejam dentro do
+        // appsettings.json passam a ter arquivo proprio.
+        ProjectFiles.MigrateFromAppSettings(_configPath);
+
         var builder = Host.CreateApplicationBuilder();
 
         builder.Configuration
@@ -118,7 +122,7 @@ public sealed class HostController : IAsyncDisposable
         builder.Logging.ClearProviders();
         builder.Logging.AddProvider(new LiveLogProvider(_liveLog));
 
-        builder.Services.AddUnityLocalCI(builder.Configuration);
+        builder.Services.AddUnityLocalCI(builder.Configuration, ProjectFiles.FolderFor(_configPath));
 
         return builder.Build();
     }

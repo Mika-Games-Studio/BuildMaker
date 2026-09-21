@@ -24,6 +24,9 @@ public sealed class MainForm : Form
 {
     private static readonly TimeSpan RefreshInterval = TimeSpan.FromSeconds(3);
 
+    /// <summary>Teto do texto da aba de log, em caracteres.</summary>
+    private const int MaxServiceLogChars = 400_000;
+
     private readonly HostController _controller;
     private readonly LiveLog _liveLog;
     private readonly string _configPath;
@@ -111,6 +114,7 @@ public sealed class MainForm : Form
         _pages.Add(BuildProjectsPage());
         _pages.Add(BuildBuildsPage());
         _pages.Add(BuildServiceLogPage());
+        _pages.Add(BuildTutorialPage());
         _pages.Add(BuildConfigPage());
 
         foreach (var page in _pages)
@@ -133,6 +137,7 @@ public sealed class MainForm : Form
         rail.AddItem("Projetos", NavGlyph.Projects);
         rail.AddItem("Builds", NavGlyph.Builds);
         rail.AddItem("Log do serviço", NavGlyph.Log);
+        rail.AddItem("Tutorial", NavGlyph.Tutorial);
         rail.AddItem("Configuração", NavGlyph.Settings);
         rail.SelectionChanged += ShowPage;
 
@@ -248,6 +253,15 @@ public sealed class MainForm : Form
         return NewPage(header, NewCard(_serviceLog));
     }
 
+    private static Panel BuildTutorialPage()
+    {
+        var header = new PageHeader(
+            "Tutorial",
+            "Do zero até a primeira build: instalar, conectar ao GitHub e vincular um projeto.");
+
+        return NewPage(header, new TutorialPage());
+    }
+
     private Panel BuildConfigPage()
     {
         var header = new PageHeader(
@@ -268,6 +282,9 @@ public sealed class MainForm : Form
 
     // -------------------------------------------------------------------- dados
 
+    /// <summary>1 enquanto uma atualizacao esta em curso.</summary>
+    private int _refreshing;
+
     private void RefreshData()
     {
         var services = _controller.Services;
@@ -276,6 +293,11 @@ public sealed class MainForm : Form
             _projectsGrid.Rows.Clear();
             return;
         }
+
+        // Uma de cada vez. O timer bate a cada tres segundos; se uma consulta
+        // demorar mais que isso — banco num disco ocupado, muitas builds —, as
+        // seguintes se empilhariam sobre a mesma conexao, e a fila so cresce.
+        if (Interlocked.Exchange(ref _refreshing, 1) == 1) return;
 
         // Fire-and-forget deliberado: o timer nao pode esperar I/O, e um
         // erro aqui so significa uma atualizacao perdida de tres segundos.
@@ -350,6 +372,7 @@ public sealed class MainForm : Form
         }
         catch (ObjectDisposedException) { /* janela fechando */ }
         catch (InvalidOperationException) { /* host reiniciando */ }
+        finally { Interlocked.Exchange(ref _refreshing, 0); }
     }
 
     /// <summary>
@@ -489,7 +512,10 @@ public sealed class MainForm : Form
 
         if (resolved is null || string.IsNullOrWhiteSpace(resolved.Publishing.ArtifactFolder)) return;
 
-        if (!Directory.Exists(resolved.Publishing.ArtifactFolder))
+        // Com prazo: a pasta de destino costuma ser um compartilhamento de rede,
+        // e perguntar por uma maquina desligada prende a janela ate o Windows
+        // desistir.
+        if (!BoundedIo.Run(() => Directory.Exists(resolved.Publishing.ArtifactFolder)))
         {
             Warn("A pasta de destino ainda nao existe:\n" + resolved.Publishing.ArtifactFolder);
             return;
@@ -587,6 +613,12 @@ public sealed class MainForm : Form
         {
             BeginInvoke(() =>
             {
+                // A caixa cresce para sempre; o LiveLog, nao. Passando do teto,
+                // ela e recarregada das ultimas linhas que ele guarda. Sem isto,
+                // um programa que fica semanas aberto vai ficando lento a cada
+                // repintura de um texto de megabytes.
+                if (_serviceLog.TextLength > MaxServiceLogChars) LoadServiceLog();
+
                 _serviceLog.AppendText(Format(line) + Environment.NewLine);
                 ScrollToEnd(_serviceLog);
             });

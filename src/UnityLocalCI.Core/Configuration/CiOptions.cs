@@ -7,9 +7,27 @@ public sealed class CiOptions
 
     public SchedulerOptions Scheduler { get; set; } = new();
     public ProjectDefaults Defaults { get; set; } = new();
+
+    /// <summary>
+    /// Preenchida a partir dos arquivos da pasta 'projetos', um por projeto.
+    /// Nao e mais lida do appsettings.json.
+    /// </summary>
     public List<ProjectOptions> Projects { get; set; } = new();
+
     public NotificationOptions Notifications { get; set; } = new();
     public StateOptions State { get; set; } = new();
+    public GitHubOptions GitHub { get; set; } = new();
+}
+
+/// <summary>Dados do OAuth App usado para conectar ao GitHub pela janela.</summary>
+public sealed class GitHubOptions
+{
+    /// <summary>
+    /// Client ID do OAuth App. E publico — o fluxo de dispositivo nao usa client
+    /// secret, e e por isso que ele serve a um programa instalado. Vazio faz a
+    /// janela oferecer a conexao pela sessao do GitHub CLI.
+    /// </summary>
+    public string? ClientId { get; set; }
 }
 
 public sealed class SchedulerOptions
@@ -44,6 +62,13 @@ public sealed class NotificationOptions
 /// <summary>Valores comuns a todos os projetos; cada projeto sobrescreve apenas o que difere.</summary>
 public sealed class ProjectDefaults
 {
+    /// <summary>
+    /// O acesso ao Git e da maquina, nao de cada jogo: quem conecta uma vez
+    /// conecta para todos. Um projeto so precisa da propria credencial quando
+    /// vive em outra organizacao ou outra conta.
+    /// </summary>
+    public RepositoryDefaults Repository { get; set; } = new();
+
     public WatcherOptions Watcher { get; set; } = new();
     public UnityOptions Unity { get; set; } = new();
     public PackagingOptions Packaging { get; set; } = new();
@@ -71,7 +96,21 @@ public sealed class RepositoryOptions
     public string Url { get; set; } = "";
     public string Branch { get; set; } = "HML";
     public string WorkspacePath { get; set; } = "";
-    /// <summary>Nome da credencial generica no Windows Credential Manager. Nunca o PAT em si.</summary>
+
+    /// <summary>
+    /// Nome da credencial generica no Windows Credential Manager. Nunca o PAT em
+    /// si. Nulo herda a conexao da maquina, em Defaults.Repository.
+    /// </summary>
+    public string? PatCredentialName { get; set; }
+}
+
+/// <summary>A conexao com o Git que vale para a maquina inteira.</summary>
+public sealed class RepositoryDefaults
+{
+    /// <summary>
+    /// Nome da credencial usada por todo projeto que nao definir a propria. E o
+    /// que o botao "Conectar ao GitHub" preenche.
+    /// </summary>
     public string? PatCredentialName { get; set; }
 }
 

@@ -153,7 +153,7 @@ internal sealed class PillButton : Button, IPaintsItself
         {
             ButtonKind.Primary => (
                 _pressed ? Theme.AccentPressed : _hover ? Theme.AccentHover : Theme.Accent,
-                Color.FromArgb(0x1A, 0x14, 0x11),
+                Theme.OnAccent,
                 Color.Transparent),
 
             ButtonKind.Ghost => (
@@ -215,7 +215,7 @@ internal sealed class DarkListBox : ListBox, IPaintsItself
 
 // ------------------------------------------------------------------ navegacao
 
-internal enum NavGlyph { Projects, Builds, Log, Settings }
+internal enum NavGlyph { Projects, Builds, Log, Tutorial, Settings }
 
 /// <summary>
 /// Coluna de navegacao a esquerda, no lugar das abas de cima.
@@ -405,6 +405,27 @@ internal sealed class NavItem : Control, IPaintsItself
                     new PointF(r.X + 4, r.Y + 10.5f),
                 ]);
                 g.DrawLine(caneta, r.X + 8.5f, r.Y + 10.5f, r.Right - 3.5f, r.Y + 10.5f);
+                break;
+
+            // Livro aberto: o tutorial.
+            case NavGlyph.Tutorial:
+                var meio = r.X + r.Width / 2f;
+                g.DrawLines(caneta,
+                [
+                    new PointF(r.X + 1, r.Y + 3),
+                    new PointF(meio - 0.5f, r.Y + 4.5f),
+                    new PointF(meio - 0.5f, r.Bottom - 2),
+                    new PointF(r.X + 1, r.Bottom - 3.5f),
+                ]);
+                g.DrawLines(caneta,
+                [
+                    new PointF(r.Right - 1, r.Y + 3),
+                    new PointF(meio + 0.5f, r.Y + 4.5f),
+                    new PointF(meio + 0.5f, r.Bottom - 2),
+                    new PointF(r.Right - 1, r.Bottom - 3.5f),
+                ]);
+                g.DrawLine(caneta, r.X + 1, r.Y + 3, r.X + 1, r.Bottom - 3.5f);
+                g.DrawLine(caneta, r.Right - 1, r.Y + 3, r.Right - 1, r.Bottom - 3.5f);
                 break;
 
             // Dois cursores: a configuracao.
