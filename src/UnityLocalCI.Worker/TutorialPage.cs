@@ -100,6 +100,7 @@ internal sealed class TutorialPage : Panel
             "conta que esta máquina já tenha — a do cofre, a que o Git usa, a do GitHub CLI — e só abre o " +
             "navegador se não achar nenhuma. A conexão é da máquina inteira: todos os projetos herdam.");
         Lista(
+            "conectado, a aba mostra a foto e o @ da conta — é a confirmação de que é a conta certa",
             "o token vai para o Gerenciador de Credenciais do Windows; a configuração guarda só o NOME da credencial",
             "\"Testar acesso\" pergunta ao servidor, projeto por projeto, se a conexão alcança o repositório",
             "\"Entrar com outra conta\" é o caminho para trocar de conta ou para uma máquina limpa");

@@ -24,9 +24,13 @@ public sealed class ConfigPanel : UserControl
 
     private readonly PropertyGrid _schedulerGrid = NewPropertyGrid();
     private readonly PropertyGrid _projectGrid = NewPropertyGrid();
-    private readonly PropertyGrid _githubGrid = NewPropertyGrid();
 
     private readonly Label _githubStatus = new() { AutoSize = false };
+    private readonly AccountCard _conta = new();
+
+    /// <summary>Credencial cuja conta ja foi buscada, para nao repetir a consulta.</summary>
+    private string? _contaConsultada;
+    private CancellationTokenSource? _buscaDaConta;
 
     private readonly DarkListBox _projectList = new() { Dock = DockStyle.Fill };
 
@@ -194,9 +198,31 @@ public sealed class ConfigPanel : UserControl
 
         botoes.Controls.AddRange([conectar, testar, outraConta, esquecer]);
 
-        _githubGrid.Dock = DockStyle.Fill;
+        _conta.Dock = DockStyle.Top;
+        _conta.Margin = new Padding(0, 0, 0, 10);
 
-        var cartao = WrapInCard(_githubGrid);
+        // Nada aqui e editavel de proposito. O nome da credencial e escolha do
+        // programa, e o Client ID so importa dentro do botao, quando sobra o
+        // navegador — campos para os dois convidavam a mexer no que a conexao
+        // ja resolve sozinha.
+        var explicacao = new Label
+        {
+            Dock = DockStyle.Fill,
+            ForeColor = Theme.TextMuted,
+            Padding = new Padding(2, 12, 2, 2),
+            Text =
+                "O acesso fica no Gerenciador de Credenciais do Windows, nunca na configuração — o arquivo " +
+                "guarda só o nome da credencial." + Environment.NewLine + Environment.NewLine +
+                "'Conectar ao GitHub' procura primeiro uma conta que esta máquina já tenha: o acesso guardado " +
+                "aqui, a conta que o Git usa (a mesma do GitHub Desktop) e a sessão do GitHub CLI. Só quando " +
+                "não encontra nenhuma é que ele abre o navegador para você autorizar." + Environment.NewLine +
+                Environment.NewLine +
+                "'Testar acesso' pergunta ao servidor, projeto por projeto, se a conexão alcança o repositório: " +
+                "a credencial existir no cofre não significa que ela tem permissão lá.",
+        };
+
+        var cartao = WrapInCard(explicacao);
+        cartao.Controls.Add(_conta);
         cartao.Controls.Add(botoes);
         cartao.Controls.Add(_githubStatus);
 
@@ -226,6 +252,9 @@ public sealed class ConfigPanel : UserControl
                 "Sem conexão. Clique em 'Conectar ao GitHub': ele procura primeiro a conta que o Git ou o " +
                 "GitHub CLI desta máquina já guardaram, e só abre o navegador se não achar nada." +
                 Environment.NewLine + rodape;
+
+            _contaConsultada = null;
+            _conta.Mostrar("Nenhuma conta conectada", "Clique em 'Conectar ao GitHub'.", null, null, conectado: false);
             return;
         }
 
@@ -238,6 +267,136 @@ public sealed class ConfigPanel : UserControl
             ? $"Conectado. O acesso está guardado no cofre do Windows como '{nome}'." + Environment.NewLine + rodape
             : $"A configuração aponta para '{nome}', que não existe no cofre do Windows. " +
               "Conecte de novo." + Environment.NewLine + rodape;
+
+        if (!existe)
+        {
+            _contaConsultada = null;
+            _conta.Mostrar("Credencial não encontrada", $"'{nome}' não existe no cofre do Windows.", null, null,
+                conectado: false);
+            return;
+        }
+
+        LoadGitHubAccount(nome, forcar: false);
+    }
+
+    /// <summary>
+    /// Quem e o dono do token guardado, com foto e @.
+    ///
+    /// E confirmacao visual: "conectado" nao diz se a conta e a do time ou uma
+    /// pessoal esquecida nesta maquina. De quebra, uma resposta negativa do
+    /// GitHub aparece aqui — e melhor descobrir que o token nao vale mais nesta
+    /// tela do que no meio de uma build.
+    /// </summary>
+    private void LoadGitHubAccount(string credencial, bool forcar)
+    {
+        if (!forcar && string.Equals(_contaConsultada, credencial, StringComparison.OrdinalIgnoreCase)) return;
+
+        _contaConsultada = credencial;
+
+        _buscaDaConta?.Cancel();
+        _buscaDaConta?.Dispose();
+        _buscaDaConta = new CancellationTokenSource();
+        var ct = _buscaDaConta.Token;
+
+        _conta.Mostrar("Buscando a conta no GitHub...", $"Credencial: {credencial}", null, null, conectado: false);
+
+        _ = Task.Run(async () =>
+        {
+            GitHubAccount? conta = null;
+            byte[]? retrato = null;
+            var semResposta = false;
+
+            try
+            {
+                var token = _credentials.Read(credencial);
+
+                if (!string.IsNullOrWhiteSpace(token))
+                {
+                    using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+                    var perfil = new GitHubProfile(http);
+
+                    conta = await perfil.ReadAsync(token, ct).ConfigureAwait(false);
+
+                    if (conta?.AvatarUrl is { Length: > 0 } endereco)
+                        retrato = await perfil.ReadAvatarAsync(endereco, ct).ConfigureAwait(false);
+                }
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { return; }
+            catch (Exception exception) when (exception is HttpRequestException or OperationCanceledException)
+            {
+                // Sem rede, ou o GitHub demorou demais. Nao e a mesma coisa que
+                // token recusado, e dizer "nao reconheceu" aqui seria acusar uma
+                // credencial boa.
+                semResposta = true;
+            }
+            catch (InvalidOperationException)
+            {
+                // Cofre indisponivel: a tela continua dizendo o que sabe.
+                semResposta = true;
+            }
+
+            if (ct.IsCancellationRequested) return;
+
+            NoFormulario(() => ShowGitHubAccount(credencial, conta, retrato, semResposta));
+        }, ct);
+    }
+
+    private void ShowGitHubAccount(string credencial, GitHubAccount? conta, byte[]? retrato, bool semResposta)
+    {
+        if (conta is null && semResposta)
+        {
+            _conta.Mostrar(
+                "Sem resposta do GitHub",
+                "Não deu para confirmar de quem é o acesso guardado — provavelmente falta rede.",
+                $"Credencial no cofre do Windows: {credencial}",
+                null,
+                conectado: false);
+
+            // Sem resposta nao e resposta: na proxima vez que a tela aparecer,
+            // pergunta de novo.
+            _contaConsultada = null;
+            return;
+        }
+
+        if (conta is null)
+        {
+            _conta.Mostrar(
+                "Conectado, mas o GitHub não reconheceu este acesso",
+                $"O que está guardado em '{credencial}' pode ter expirado ou sido revogado.",
+                "Use 'Entrar com outra conta' para conectar de novo.",
+                null,
+                conectado: false);
+            return;
+        }
+
+        _conta.Mostrar(
+            conta.Display,
+            "@" + conta.Login,
+            $"Credencial no cofre do Windows: {credencial}",
+            Retrato(retrato),
+            conectado: true);
+    }
+
+    /// <summary>
+    /// Bytes viram bitmap proprio: com Image.FromStream o fluxo precisa viver
+    /// tanto quanto a imagem, e um fluxo fechado vira erro generico do GDI+ na
+    /// primeira repintura.
+    /// </summary>
+    private static Image? Retrato(byte[]? bytes)
+    {
+        if (bytes is null || bytes.Length == 0) return null;
+
+        try
+        {
+            using var fluxo = new MemoryStream(bytes);
+            using var original = Image.FromStream(fluxo);
+            return new Bitmap(original);
+        }
+        catch (Exception exception) when (exception is ArgumentException or OutOfMemoryException)
+        {
+            // Nao era imagem. A silhueta resolve.
+            return null;
+        }
     }
 
     /// <summary>
@@ -329,7 +488,7 @@ public sealed class ConfigPanel : UserControl
         if (resposta != DialogResult.Yes) return;
 
         _options.Defaults.Repository.PatCredentialName = null;
-        _githubGrid.Refresh();
+
         RefreshGitHubStatus();
         ShowSelectedProject();
     }
@@ -367,7 +526,6 @@ public sealed class ConfigPanel : UserControl
         }
 
         _schedulerGrid.SelectedObject = new GeneralView(_options);
-        _githubGrid.SelectedObject = new GitHubView(_options);
         RefreshGitHubStatus();
         RefreshProjectList();
     }
@@ -451,7 +609,13 @@ public sealed class ConfigPanel : UserControl
     {
         base.OnVisibleChanged(e);
 
-        if (Visible) ReportBranches(SelectedProject()?.Repository?.Url);
+        if (!Visible) return;
+
+        ReportBranches(SelectedProject()?.Repository?.Url);
+
+        // A consulta da conta pode ter ficado sem resposta — falta de rede na
+        // hora em que a janela abriu, por exemplo. Aqui ela ganha outra chance.
+        if (_contaConsultada is null) RefreshGitHubStatus();
     }
 
     /// <summary>
@@ -550,7 +714,10 @@ public sealed class ConfigPanel : UserControl
         foreach (var projeto in comCredencialPropria)
             projeto.Repository!.PatCredentialName = null;
 
-        _githubGrid.Refresh();
+        // Pode ser outra conta guardada sob o mesmo nome: a consulta anterior
+        // nao vale mais, e a foto na tela seria a da conta antiga.
+        _contaConsultada = null;
+
         RefreshGitHubStatus();
         ShowSelectedProject();
 

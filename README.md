@@ -57,7 +57,9 @@ A busca vai do mais específico para o mais geral, e só o último caminho abre 
 
 **Entrar com outra conta** ignora a busca e abre a janela de sempre — é o caminho para trocar de conta ou entrar numa máquina limpa.
 
-Tudo isso mora na aba **GitHub** da configuração, e não no cadastro de cada projeto: a conexão é da máquina. A aba mostra o estado (conectado, apontando para credencial inexistente, ou sem conexão), quantos projetos a herdam, e tem **Testar acesso** — que pergunta ao servidor, projeto por projeto, se aquela conexão realmente alcança o repositório. Credencial existir no cofre não significa que ela tem permissão lá.
+Tudo isso mora na aba **GitHub** da configuração, e não no cadastro de cada projeto: a conexão é da máquina. A aba mostra **a foto e o @ de quem está conectado**, lidos do próprio GitHub — "conectado" sozinho não diz se a conta é a do time ou uma pessoal esquecida na máquina. Mostra também o estado (conectado, apontando para credencial inexistente, ou sem conexão), quantos projetos herdam, e tem **Testar acesso**, que pergunta ao servidor, projeto por projeto, se aquela conexão realmente alcança o repositório. Credencial existir no cofre não significa que ela tem permissão lá.
+
+Nada nessa aba é editável: o nome da credencial é escolha do programa, e o Client ID só aparece dentro do botão, na única situação em que ele faz falta. Campo para os dois convidava a mexer no que a conexão já resolve sozinha.
 
 Se preferir gravar um token à mão, o caminho antigo continua valendo:
 

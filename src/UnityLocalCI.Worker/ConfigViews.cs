@@ -133,44 +133,6 @@ public sealed class GeneralView(CiOptions options)
 }
 
 /// <summary>
-/// A aba GitHub: a conexao que vale para a maquina inteira.
-///
-/// Separada das outras de proposito. Ela nao pertence a nenhum projeto — e
-/// justamente o contrario: e o que todos herdam. Deixa-la no meio do cadastro
-/// de um projeto sugeria, errado, que cada jogo tem a sua.
-/// </summary>
-public sealed class GitHubView(CiOptions options)
-{
-    private readonly RepositoryDefaults _repository = options.Defaults.Repository;
-    private readonly GitHubOptions _github = options.GitHub;
-
-    [Category("Conexão")]
-    [DisplayName("Credencial no cofre do Windows")]
-    [Description(
-        "Nome da credencial usada por TODOS os projetos que não definirem a própria. É o que o botão " +
-        "'Conectar ao GitHub' preenche. Aqui vai o NOME, nunca o token.")]
-    public string? CredencialDaMaquina
-    {
-        get => _repository.PatCredentialName;
-        set => _repository.PatCredentialName = Texto.OuNulo(value);
-    }
-
-    [Category("Entrar pelo navegador")]
-    [DisplayName("Client ID do OAuth App (opcional)")]
-    [Description(
-        "Só é preciso numa máquina que não tenha NENHUMA conta guardada — quando o Git e o GitHub CLI não " +
-        "respondem e sobra o navegador. O GitHub Desktop não pergunta isso porque é um OAuth App registrado " +
-        "com o Client ID embutido; para ficar igual, registre um em github.com/settings/applications/new " +
-        "com 'Enable Device Flow' e cole aqui (ou na constante BuiltInClientId, e aí ninguém mais vê este " +
-        "campo). O Client ID é público: não é segredo.")]
-    public string? ClientId
-    {
-        get => _github.ClientId;
-        set => _github.ClientId = Texto.OuNulo(value);
-    }
-}
-
-/// <summary>
 /// Oferece as branches do repositorio como lista no campo Branch.
 ///
 /// Nao exclusiva de proposito: da para digitar uma branch que ainda nao existe
