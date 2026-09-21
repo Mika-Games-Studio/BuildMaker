@@ -57,7 +57,7 @@ A busca vai do mais específico para o mais geral, e só o último caminho abre 
 
 **Entrar com outra conta** ignora a busca e abre a janela de sempre — é o caminho para trocar de conta ou entrar numa máquina limpa.
 
-Tudo isso mora na aba **GitHub** da configuração, e não no cadastro de cada projeto: a conexão é da máquina. A aba mostra **a foto e o @ de quem está conectado**, lidos do próprio GitHub — "conectado" sozinho não diz se a conta é a do time ou uma pessoal esquecida na máquina. Mostra também o estado (conectado, apontando para credencial inexistente, ou sem conexão), quantos projetos herdam, e tem **Testar acesso**, que pergunta ao servidor, projeto por projeto, se aquela conexão realmente alcança o repositório. Credencial existir no cofre não significa que ela tem permissão lá.
+Tudo isso mora na aba **GitHub** da configuração, e não no cadastro de cada projeto: a conexão é da máquina. A aba mostra **a foto e o @ de quem está conectado**, lidos do próprio GitHub — "conectado" sozinho não diz se a conta é a do time ou uma pessoal esquecida na máquina. Mostra também o estado (conectado, apontando para credencial inexistente, ou sem conexão) e quantos projetos herdam. **Enquanto a foto e o @ aparecem, a conexão está de pé**: quem responde é o próprio GitHub, com o acesso guardado — token revogado vira "não reconheceu" ali mesmo, antes de uma build falhar por causa disso.
 
 Nada nessa aba é editável: o nome da credencial é escolha do programa, e o Client ID só aparece dentro do botão, na única situação em que ele faz falta. Campo para os dois convidava a mexer no que a conexão já resolve sozinha.
 
@@ -225,7 +225,12 @@ A validação olha a credencial **resolvida**. Conferindo só a do projeto, uma 
 
 #### O visual
 
-Tema escuro quente, com a paleta em degraus — fundo, superfície, superfície elevada — e **um único destaque**, o coral, reservado para a ação principal, o item de navegação ativo e a build em execução. A profundidade vem dos cartões arredondados com contorno discreto, e não de sombra: o WinForms não desenha sombra de verdade, e uma sombra falsa sobre fundo liso fica pior que nenhuma.
+As duas cores da marca são o verde **`#6FAB16`** e o quase-preto **`#131A09`**. Elas têm o mesmo matiz — 84°, amarelo-esverdeado —, então a escala de fundos sai toda de uma família: fundo, superfície, superfície elevada, em vez de um cinza único. É isso que dá profundidade sem sombra. O destaque é **um só**, o verde, reservado para a ação principal, o item de navegação ativo e a build em execução; os cartões arredondados com contorno discreto fazem o resto, porque o WinForms não desenha sombra de verdade e uma sombra falsa sobre fundo liso fica pior que nenhuma.
+
+Duas consequências dessa paleta que valem registro:
+
+- o verde é claro demais para carregar texto branco — 2,7:1, reprovado —, então **o que se escreve em cima dele é o quase-preto**, que dá 7,7:1;
+- o verde do "deu certo" **não é o verde da marca**, e sim um verde-água. Se fossem o mesmo, "terminou bem" e "este é o botão principal" falariam com a mesma voz.
 
 O WinForms não tem tema — cada controle pinta com as cores do sistema —, então:
 

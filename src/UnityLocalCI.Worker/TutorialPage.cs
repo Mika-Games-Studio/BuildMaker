@@ -102,7 +102,6 @@ internal sealed class TutorialPage : Panel
         Lista(
             "conectado, a aba mostra a foto e o @ da conta — é a confirmação de que é a conta certa",
             "o token vai para o Gerenciador de Credenciais do Windows; a configuração guarda só o NOME da credencial",
-            "\"Testar acesso\" pergunta ao servidor, projeto por projeto, se a conexão alcança o repositório",
             "\"Entrar com outra conta\" é o caminho para trocar de conta ou para uma máquina limpa");
         Paragrafo("Se preferir gravar um token à mão, o nome da credencial é este:", recuo: 34);
         Comando("cmdkey /generic:UnityLocalCI_GitHub /user:pat /pass:SEU_PAT_AQUI");

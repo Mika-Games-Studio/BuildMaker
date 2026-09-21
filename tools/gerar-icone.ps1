@@ -16,9 +16,9 @@ Add-Type -AssemblyName System.Drawing
 
 $tamanhos = 16, 20, 24, 32, 48, 64, 128, 256
 
-$fundo   = [System.Drawing.Color]::FromArgb(0x0E, 0x63, 0x9C)  # azul do tema
-$marca   = [System.Drawing.Color]::FromArgb(0xFF, 0xFF, 0xFF)
-$destaque = [System.Drawing.Color]::FromArgb(0x89, 0xD1, 0x85) # verde de sucesso
+$fundo   = [System.Drawing.Color]::FromArgb(0x6F, 0xAB, 0x16)  # verde da marca
+$marca   = [System.Drawing.Color]::FromArgb(0x13, 0x1A, 0x09)  # quase-preto da marca
+$destaque = [System.Drawing.Color]::FromArgb(0x13, 0x1A, 0x09)  # a base, no mesmo tom
 
 function Desenhar([int]$s) {
     $bmp = New-Object System.Drawing.Bitmap $s, $s

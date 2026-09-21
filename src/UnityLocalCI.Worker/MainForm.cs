@@ -257,7 +257,7 @@ public sealed class MainForm : Form
     {
         var header = new PageHeader(
             "Tutorial",
-            "Do zero até a primeira build: instalar, gravar o PAT e vincular um projeto.");
+            "Do zero até a primeira build: instalar, conectar ao GitHub e vincular um projeto.");
 
         return NewPage(header, new TutorialPage());
     }

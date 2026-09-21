@@ -13,10 +13,16 @@ internal interface IPaintsItself;
 /// <summary>
 /// Tema da janela.
 ///
-/// A paleta e quente e escalonada — fundo, superficie e superficie elevada —
-/// em vez de um cinza unico: e isso que da profundidade sem sombra, e o que
-/// impede a tela de parecer chapada. O destaque e um so, o coral, usado com
+/// As duas cores da marca sao o verde #6FAB16 e o quase-preto #131A09. Elas
+/// tem o mesmo matiz — 84 graus, amarelo-esverdeado —, entao a escala de
+/// fundos sai de uma so familia: fundo, superficie e superficie elevada, em
+/// vez de um cinza unico. E isso que da profundidade sem sombra, e o que
+/// impede a tela de parecer chapada. O destaque e um so, o verde, usado com
 /// parcimonia: se tudo destaca, nada destaca.
+///
+/// O verde e claro demais para carregar texto branco — da 2,7:1, reprovado em
+/// qualquer leitura. Por isso o que se escreve em cima dele e o quase-preto,
+/// em <see cref="OnAccent"/>, que da 7,7:1.
 ///
 /// O WinForms nao tem tema. Cada controle pinta com as cores do sistema, entao
 /// tudo aqui e aplicado controle a controle, e os que o sistema insiste em
@@ -27,42 +33,58 @@ public static class Theme
 {
     // --------------------------------------------------------------- paleta
 
-    /// <summary>Fundo da janela, atras de tudo.</summary>
-    public static readonly Color Canvas = Rgb(0x1A1918);
+    /// <summary>Fundo da janela, atras de tudo. E a cor da marca, sem diluicao.</summary>
+    public static readonly Color Canvas = Rgb(0x131A09);
 
     /// <summary>Coluna de navegacao: um degrau abaixo do conteudo.</summary>
-    public static readonly Color Rail = Rgb(0x1F1E1C);
+    public static readonly Color Rail = Rgb(0x19210D);
 
     /// <summary>Cartoes, grades, caixas de texto.</summary>
-    public static readonly Color Surface = Rgb(0x242321);
+    public static readonly Color Surface = Rgb(0x1F2A11);
 
     /// <summary>Cabecalhos de coluna, botoes, estado de hover.</summary>
-    public static readonly Color SurfaceHigh = Rgb(0x2E2C29);
+    public static readonly Color SurfaceHigh = Rgb(0x2A3818);
 
-    public static readonly Color Border = Rgb(0x36332E);
-    public static readonly Color BorderSoft = Rgb(0x2A2825);
-
-    public static readonly Color Text = Rgb(0xEDEAE4);
-    public static readonly Color TextMuted = Rgb(0x9B958A);
-    public static readonly Color TextFaint = Rgb(0x6E6960);
-
-    /// <summary>O coral. Um unico destaque em toda a interface.</summary>
-    public static readonly Color Accent = Rgb(0xD97757);
-
-    public static readonly Color AccentHover = Rgb(0xE28A6C);
-    public static readonly Color AccentPressed = Rgb(0xC0603E);
-
-    /// <summary>Coral diluido no fundo: selecao e item ativo, sem berrar.</summary>
-    public static readonly Color AccentSoft = Rgb(0x322721);
+    public static readonly Color Border = Rgb(0x3C4B26);
+    public static readonly Color BorderSoft = Rgb(0x293419);
 
     /// <summary>
-    /// Verde e vermelho claros, nao escuros: no fundo escuro o tom fechado
-    /// some, e resultado de build e justamente o que precisa saltar aos olhos.
+    /// Branco levemente esverdeado, e nao puro: texto branco sobre fundo
+    /// colorido vibra na borda, e o olho paga por isso numa tela aberta o dia
+    /// inteiro.
     /// </summary>
-    public static readonly Color Success = Rgb(0x7FC08A);
+    public static readonly Color Text = Rgb(0xE9EEE1);
+
+    public static readonly Color TextMuted = Rgb(0x9FAA92);
+    public static readonly Color TextFaint = Rgb(0x6F7A62);
+
+    /// <summary>O verde da marca. Um unico destaque em toda a interface.</summary>
+    public static readonly Color Accent = Rgb(0x6FAB16);
+
+    public static readonly Color AccentHover = Rgb(0x82C11F);
+    public static readonly Color AccentPressed = Rgb(0x588B10);
+
+    /// <summary>
+    /// O que se escreve em cima do verde. Claro demais para texto branco: o
+    /// quase-preto da marca e o que passa em contraste.
+    /// </summary>
+    public static readonly Color OnAccent = Rgb(0x101705);
+
+    /// <summary>Verde diluido no fundo: selecao e item ativo, sem berrar.</summary>
+    public static readonly Color AccentSoft = Rgb(0x27350F);
+
+    /// <summary>
+    /// Os estados de build, claros e nao escuros: no fundo escuro o tom fechado
+    /// some, e resultado de build e justamente o que precisa saltar aos olhos.
+    ///
+    /// O verde-agua do sucesso e de proposito diferente do verde da marca. Se
+    /// fossem o mesmo, "terminou bem" e "este e o botao principal" falariam com
+    /// a mesma voz, e uma tela cheia de linhas verdes nao diria mais nada.
+    /// </summary>
+    public static readonly Color Success = Rgb(0x5FC9A2);
 
     public static readonly Color Danger = Rgb(0xE8836F);
-    public static readonly Color Warning = Rgb(0xE0B252);
+    public static readonly Color Warning = Rgb(0xE5B94F);
     public static readonly Color Info = Rgb(0x7EA6C9);
 
     // ------------------------------------------------- compatibilidade de nome

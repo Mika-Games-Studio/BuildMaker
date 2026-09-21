@@ -153,7 +153,7 @@ internal sealed class PillButton : Button, IPaintsItself
         {
             ButtonKind.Primary => (
                 _pressed ? Theme.AccentPressed : _hover ? Theme.AccentHover : Theme.Accent,
-                Color.FromArgb(0x1A, 0x14, 0x11),
+                Theme.OnAccent,
                 Color.Transparent),
 
             ButtonKind.Ghost => (

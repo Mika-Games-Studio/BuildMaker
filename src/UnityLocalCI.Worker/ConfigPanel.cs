@@ -1,6 +1,3 @@
-using UnityLocalCI.Core.Abstractions;
-using UnityLocalCI.Core.Git;
-using Microsoft.Extensions.Logging.Abstractions;
 using UnityLocalCI.Core.Configuration;
 using UnityLocalCI.Core.Hosting;
 using UnityLocalCI.Core.Secrets;
@@ -31,6 +28,10 @@ public sealed class ConfigPanel : UserControl
     /// <summary>Credencial cuja conta ja foi buscada, para nao repetir a consulta.</summary>
     private string? _contaConsultada;
     private CancellationTokenSource? _buscaDaConta;
+
+    /// <summary>Respostas que chegaram antes de a janela ter handle.</summary>
+    private readonly List<Action> _espera = [];
+    private bool _prontoParaUi;
 
     private readonly DarkListBox _projectList = new() { Dock = DockStyle.Fill };
 
@@ -187,16 +188,14 @@ public sealed class ConfigPanel : UserControl
         };
 
         var conectar = new PillButton("Conectar ao GitHub", ButtonKind.Primary) { Width = 168, Backdrop = Theme.Surface };
-        var testar = new PillButton("Testar acesso", ButtonKind.Default) { Width = 130, Backdrop = Theme.Surface };
         var outraConta = new PillButton("Entrar com outra conta", ButtonKind.Default) { Width = 180, Backdrop = Theme.Surface };
         var esquecer = new PillButton("Desconectar", ButtonKind.Ghost) { Width = 120, Backdrop = Theme.Surface };
 
         conectar.Click += (_, _) => ConnectToGitHub(conectar);
-        testar.Click += (_, _) => TestGitHubAccess(testar);
         outraConta.Click += (_, _) => SignInToGitHub();
         esquecer.Click += (_, _) => DisconnectFromGitHub();
 
-        botoes.Controls.AddRange([conectar, testar, outraConta, esquecer]);
+        botoes.Controls.AddRange([conectar, outraConta, esquecer]);
 
         _conta.Dock = DockStyle.Top;
         _conta.Margin = new Padding(0, 0, 0, 10);
@@ -217,8 +216,8 @@ public sealed class ConfigPanel : UserControl
                 "aqui, a conta que o Git usa (a mesma do GitHub Desktop) e a sessão do GitHub CLI. Só quando " +
                 "não encontra nenhuma é que ele abre o navegador para você autorizar." + Environment.NewLine +
                 Environment.NewLine +
-                "'Testar acesso' pergunta ao servidor, projeto por projeto, se a conexão alcança o repositório: " +
-                "a credencial existir no cofre não significa que ela tem permissão lá.",
+                "A foto e o @ aqui em cima vêm do próprio GitHub, lidos com o acesso guardado: enquanto eles " +
+                "aparecem, a conexão está de pé.",
         };
 
         var cartao = WrapInCard(explicacao);
@@ -399,74 +398,6 @@ public sealed class ConfigPanel : UserControl
         }
     }
 
-    /// <summary>
-    /// Pergunta ao servidor, projeto por projeto, se a conexao atual da acesso.
-    /// E a unica resposta que vale: credencial existir no cofre nao significa
-    /// que ela alcanca aquele repositorio.
-    /// </summary>
-    private void TestGitHubAccess(PillButton botao)
-    {
-        var alvos = _options.Projects
-            .Where(p => !string.IsNullOrWhiteSpace(p.Repository?.Url))
-            .Select(p => (p.Name, Url: p.Repository!.Url, Credencial: ProjectResolver.ResolveCredential(p, _options.Defaults)))
-            .ToList();
-
-        if (alvos.Count == 0)
-        {
-            MessageBox.Show(this, "Nenhum projeto com URL cadastrada para testar.",
-                "UnityLocalCI", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            return;
-        }
-
-        botao.Enabled = false;
-        _githubStatus.ForeColor = Theme.TextMuted;
-        _githubStatus.Text = "Perguntando ao servidor...";
-
-        _ = Task.Run(async () =>
-        {
-            var git = new GitClient(
-                new ProcessRunner(NullLogger<ProcessRunner>.Instance),
-                NullLogger<GitClient>.Instance);
-
-            var linhas = new List<string>();
-
-            foreach (var (nome, url, credencial) in alvos)
-            {
-                var token = string.IsNullOrWhiteSpace(credencial) ? null : _credentials.Read(credencial);
-
-                try
-                {
-                    var branches = await git.ListRemoteBranchesAsync(
-                        new GitContext { WorkspacePath = "", RepositoryUrl = url, Branch = "", PersonalAccessToken = token },
-                        CancellationToken.None).ConfigureAwait(false);
-
-                    linhas.Add($"OK    {nome}: {branches.Count} branch(es).");
-                }
-                catch (GitCommandException exception)
-                {
-                    var motivo = exception.StandardError.Split('\n').FirstOrDefault()?.Trim();
-                    linhas.Add($"FALHA {nome}: {motivo}");
-                }
-                catch (Exception exception)
-                {
-                    linhas.Add($"FALHA {nome}: {exception.Message}");
-                }
-            }
-
-            NoFormulario(() =>
-            {
-                botao.Enabled = true;
-                RefreshGitHubStatus();
-
-                MessageBox.Show(
-                    this,
-                    string.Join(Environment.NewLine, linhas) + Environment.NewLine + Environment.NewLine +
-                    "'Write access to repository not granted' quer dizer que o token autenticou mas não tem " +
-                    "permissão naquele repositório — não que falte permissão de escrita.",
-                    "Teste de acesso", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            });
-        });
-    }
 
     /// <summary>
     /// Esquece a conexao na configuracao. O token continua no cofre do Windows:
@@ -493,13 +424,53 @@ public sealed class ConfigPanel : UserControl
         ShowSelectedProject();
     }
 
+    /// <summary>
+    /// Leva uma resposta de segundo plano de volta para a thread da janela —
+    /// guardando-a quando a janela ainda nao tem handle.
+    ///
+    /// Esta pagina e construida junto com a janela, antes de qualquer handle
+    /// existir, e ja sai perguntando a conta ao GitHub. A resposta costuma
+    /// chegar em menos de um segundo, ou seja, no meio dessa janela de tempo —
+    /// e simplesmente descarta-la deixava o cartao preso em "buscando a conta"
+    /// para sempre.
+    /// </summary>
     private void NoFormulario(Action acao)
     {
-        if (!IsHandleCreated) return;
+        lock (_espera)
+        {
+            if (!_prontoParaUi)
+            {
+                _espera.Add(acao);
+                return;
+            }
+        }
 
         try { BeginInvoke(acao); }
         catch (ObjectDisposedException) { /* janela fechando */ }
         catch (InvalidOperationException) { /* handle indo embora */ }
+    }
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+
+        Action[] guardadas;
+
+        lock (_espera)
+        {
+            _prontoParaUi = true;
+            guardadas = [.. _espera];
+            _espera.Clear();
+        }
+
+        foreach (var acao in guardadas) NoFormulario(acao);
+    }
+
+    protected override void OnHandleDestroyed(EventArgs e)
+    {
+        lock (_espera) _prontoParaUi = false;
+
+        base.OnHandleDestroyed(e);
     }
 
     private static Card WrapInCard(Control content)
@@ -739,7 +710,7 @@ public sealed class ConfigPanel : UserControl
                   $"{comCredencialPropria.Count} projeto(s) tinham credencial própria e passaram a herdar esta."
                 : "") +
             Environment.NewLine + Environment.NewLine +
-            "Use 'Testar acesso' para confirmar no servidor, e salve para valer.",
+            "A foto e o @ da conta aparecem na aba em instantes. Falta salvar para valer.",
             "UnityLocalCI", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 
