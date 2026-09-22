@@ -24,6 +24,7 @@ public sealed class ConfigPanel : UserControl
 
     private readonly Label _githubStatus = new() { AutoSize = false };
     private readonly AccountCard _conta = new();
+    private readonly StatRow _numeros = new();
 
     /// <summary>Credencial cuja conta ja foi buscada, para nao repetir a consulta.</summary>
     private string? _contaConsultada;
@@ -177,13 +178,15 @@ public sealed class ConfigPanel : UserControl
         var pagina = new TabPage("GitHub") { Padding = new Padding(0, 10, 0, 0) };
 
         _githubStatus.Dock = DockStyle.Top;
-        _githubStatus.Height = 72;
-        _githubStatus.Padding = new Padding(2, 4, 2, 8);
+        _githubStatus.Height = 40;
+        _githubStatus.Padding = new Padding(2, 10, 2, 4);
+        _githubStatus.ForeColor = Theme.TextFaint;
 
         var botoes = new FlowLayoutPanel
         {
             Dock = DockStyle.Top,
-            Height = 46,
+            Height = 48,
+            Padding = new Padding(0, 8, 0, 8),
             BackColor = Theme.Surface,
         };
 
@@ -198,32 +201,25 @@ public sealed class ConfigPanel : UserControl
         botoes.Controls.AddRange([conectar, outraConta, esquecer]);
 
         _conta.Dock = DockStyle.Top;
-        _conta.Margin = new Padding(0, 0, 0, 10);
 
+        _numeros.Dock = DockStyle.Top;
+        _numeros.Margin = new Padding(0, 10, 0, 0);
+
+        // A tela nao explica mais como a conexao funciona: ela mostra a conta, o
+        // que ela alcanca e os tres botoes. O texto que estava aqui repetia o
+        // Tutorial, e uma tela que explica a si mesma toda vez e uma tela que
+        // nao se explica de relance.
+        //
         // Nada aqui e editavel de proposito. O nome da credencial e escolha do
         // programa, e o Client ID so importa dentro do botao, quando sobra o
-        // navegador — campos para os dois convidavam a mexer no que a conexao
-        // ja resolve sozinha.
-        var explicacao = new Label
-        {
-            Dock = DockStyle.Fill,
-            ForeColor = Theme.TextMuted,
-            Padding = new Padding(2, 12, 2, 2),
-            Text =
-                "O acesso fica no Gerenciador de Credenciais do Windows, nunca na configuração — o arquivo " +
-                "guarda só o nome da credencial." + Environment.NewLine + Environment.NewLine +
-                "'Conectar ao GitHub' procura primeiro uma conta que esta máquina já tenha: o acesso guardado " +
-                "aqui, a conta que o Git usa (a mesma do GitHub Desktop) e a sessão do GitHub CLI. Só quando " +
-                "não encontra nenhuma é que ele abre o navegador para você autorizar." + Environment.NewLine +
-                Environment.NewLine +
-                "A foto e o @ aqui em cima vêm do próprio GitHub, lidos com o acesso guardado: enquanto eles " +
-                "aparecem, a conexão está de pé.",
-        };
+        // navegador.
+        var sobra = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Surface };
 
-        var cartao = WrapInCard(explicacao);
-        cartao.Controls.Add(_conta);
-        cartao.Controls.Add(botoes);
+        var cartao = WrapInCard(sobra);
         cartao.Controls.Add(_githubStatus);
+        cartao.Controls.Add(botoes);
+        cartao.Controls.Add(_numeros);
+        cartao.Controls.Add(_conta);
 
         pagina.Controls.Add(cartao);
         return pagina;
@@ -241,18 +237,15 @@ public sealed class ConfigPanel : UserControl
         var herdam = _options.Projects.Count(p => string.IsNullOrWhiteSpace(p.Repository?.PatCredentialName));
         var excecoes = _options.Projects.Count - herdam;
 
-        var rodape = $"{herdam} projeto(s) herdam esta conexão" +
-                     (excecoes > 0 ? $", {excecoes} com credencial própria." : ".");
+        MostrarNumeros(herdam, excecoes, escopos: null);
 
         if (string.IsNullOrWhiteSpace(nome))
         {
             _githubStatus.ForeColor = Theme.Warning;
-            _githubStatus.Text =
-                "Sem conexão. Clique em 'Conectar ao GitHub': ele procura primeiro a conta que o Git ou o " +
-                "GitHub CLI desta máquina já guardaram, e só abre o navegador se não achar nada." +
-                Environment.NewLine + rodape;
+            _githubStatus.Text = "Nenhuma conexão guardada nesta máquina.";
 
             _contaConsultada = null;
+            _conta.Selo(null, Theme.TextFaint);
             _conta.Mostrar("Nenhuma conta conectada", "Clique em 'Conectar ao GitHub'.", null, null, conectado: false);
             return;
         }
@@ -261,15 +254,13 @@ public sealed class ConfigPanel : UserControl
         try { existe = _credentials.Exists(nome); }
         catch (InvalidOperationException) { /* cofre indisponivel: tratado como ausente */ }
 
-        _githubStatus.ForeColor = existe ? Theme.Success : Theme.Danger;
-        _githubStatus.Text = existe
-            ? $"Conectado. O acesso está guardado no cofre do Windows como '{nome}'." + Environment.NewLine + rodape
-            : $"A configuração aponta para '{nome}', que não existe no cofre do Windows. " +
-              "Conecte de novo." + Environment.NewLine + rodape;
-
         if (!existe)
         {
+            _githubStatus.ForeColor = Theme.Danger;
+            _githubStatus.Text = $"A configuração aponta para '{nome}', que não existe no cofre do Windows.";
+
             _contaConsultada = null;
+            _conta.Selo("SEM CREDENCIAL", Theme.Danger);
             _conta.Mostrar("Credencial não encontrada", $"'{nome}' não existe no cofre do Windows.", null, null,
                 conectado: false);
             return;
@@ -277,6 +268,18 @@ public sealed class ConfigPanel : UserControl
 
         LoadGitHubAccount(nome, forcar: false);
     }
+
+    /// <summary>
+    /// A faixa de tres numeros. Os escopos so aparecem depois que o GitHub
+    /// responde, e em token de granularidade fina nunca aparecem — o GitHub nao
+    /// os conta. Nesses casos a caixa diz isso, em vez de mostrar um traco que
+    /// parece defeito.
+    /// </summary>
+    private void MostrarNumeros(int herdam, int excecoes, string? escopos)
+        => _numeros.Mostrar(
+            (herdam.ToString(), herdam == 1 ? "projeto herda esta conexão" : "projetos herdam esta conexão"),
+            (excecoes.ToString(), excecoes == 1 ? "projeto com credencial própria" : "projetos com credencial própria"),
+            (escopos ?? "—", "escopos do token"));
 
     /// <summary>
     /// Quem e o dono do token guardado, com foto e @.
@@ -297,6 +300,7 @@ public sealed class ConfigPanel : UserControl
         _buscaDaConta = new CancellationTokenSource();
         var ct = _buscaDaConta.Token;
 
+        _conta.Selo("CONSULTANDO", Theme.Info);
         _conta.Mostrar("Buscando a conta no GitHub...", $"Credencial: {credencial}", null, null, conectado: false);
 
         _ = Task.Run(async () =>
@@ -344,6 +348,7 @@ public sealed class ConfigPanel : UserControl
     {
         if (conta is null && semResposta)
         {
+            _conta.Selo("SEM RESPOSTA", Theme.Warning);
             _conta.Mostrar(
                 "Sem resposta do GitHub",
                 "Não deu para confirmar de quem é o acesso guardado — provavelmente falta rede.",
@@ -359,6 +364,10 @@ public sealed class ConfigPanel : UserControl
 
         if (conta is null)
         {
+            _githubStatus.ForeColor = Theme.Danger;
+            _githubStatus.Text = "O GitHub recusou o acesso guardado. Ele pode ter expirado ou sido revogado.";
+
+            _conta.Selo("RECUSADA", Theme.Danger);
             _conta.Mostrar(
                 "Conectado, mas o GitHub não reconheceu este acesso",
                 $"O que está guardado em '{credencial}' pode ter expirado ou sido revogado.",
@@ -368,12 +377,19 @@ public sealed class ConfigPanel : UserControl
             return;
         }
 
+        _conta.Selo("CONECTADA", Theme.Success);
         _conta.Mostrar(
             conta.Display,
-            "@" + conta.Login,
-            $"Credencial no cofre do Windows: {credencial}",
+            $"@{conta.Login} · credencial {credencial} no cofre do Windows",
+            null,
             Retrato(retrato),
             conectado: true);
+
+        var herdam = _options.Projects.Count(p => string.IsNullOrWhiteSpace(p.Repository?.PatCredentialName));
+        MostrarNumeros(herdam, _options.Projects.Count - herdam, conta.Scopes);
+
+        _githubStatus.ForeColor = Theme.TextFaint;
+        _githubStatus.Text = $"Conta confirmada no GitHub às {DateTime.Now:HH:mm}.";
     }
 
     /// <summary>
@@ -531,12 +547,18 @@ public sealed class ConfigPanel : UserControl
         }
 
         var project = _options.Projects[index];
-        _projectGrid.SelectedObject = new ProjectView(project, _branches, _options.Defaults);
+        var view = new ProjectView(project, _branches, _options.Defaults);
+        _projectGrid.SelectedObject = view;
 
         // A lista de branches e buscada em segundo plano; quando o usuario abrir
         // o dropdown, ela ja estara la. Nada aqui espera pela rede.
         _branches.EnsureLoaded(project, _options.Defaults);
-        ReportBranches(project.Repository?.Url);
+
+        // A divergencia de versao do editor tem prioridade sobre o andamento da
+        // busca de branches: uma build na versao errada produz um artefato que
+        // parece certo, e isso importa mais que saber se a lista ja carregou.
+        if (view.DivergenciaDeEditor is { } aviso) Report(aviso, Tom.Aviso);
+        else ReportBranches(project.Repository?.Url);
     }
 
     /// <summary>
@@ -905,13 +927,27 @@ public sealed class ConfigPanel : UserControl
     }
 
     /// <summary>
-    /// A mesma linha diz as duas coisas, entao a cor precisa acompanhar: sucesso
+    /// O que a linha do rodape esta dizendo. Aviso e o meio-termo: nao impede
+    /// de gravar, mas a build vai sair diferente do que se espera.
+    /// </summary>
+    private enum Tom { Bom, Aviso, Problema }
+
+    private void Report(string text, bool problema, bool sobreBranches = false)
+        => Report(text, problema ? Tom.Problema : Tom.Bom, sobreBranches);
+
+    /// <summary>
+    /// A mesma linha diz as tres coisas, entao a cor precisa acompanhar: sucesso
     /// escrito em vermelho ensina o usuario a ignorar o vermelho.
     /// </summary>
-    private void Report(string text, bool problema, bool sobreBranches = false)
+    private void Report(string text, Tom tom, bool sobreBranches = false)
     {
         _problems.Text = text;
-        _problems.ForeColor = problema ? Theme.Danger : Theme.Success;
+        _problems.ForeColor = tom switch
+        {
+            Tom.Problema => Theme.Danger,
+            Tom.Aviso => Theme.Warning,
+            _ => Theme.Success,
+        };
 
         // Escondida quando nao ha o que dizer: uma faixa vazia de 60 pixels
         // entre o conteudo e os botoes so faz a tela parecer desalinhada.

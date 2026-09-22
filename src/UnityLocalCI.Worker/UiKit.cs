@@ -39,14 +39,36 @@ internal static class UiKit
         Color corForte, Color corFraca)
     {
         var largura = TextRenderer
-            .MeasureText(g, forte, Theme.Mark, new Size(int.MaxValue, bounds.Height), Colado)
+            .MeasureText(g, forte, Theme.UiBold, new Size(int.MaxValue, bounds.Height), Colado)
             .Width;
 
-        TextRenderer.DrawText(g, forte, Theme.Mark, bounds, corForte, Colado);
+        TextRenderer.DrawText(g, forte, Theme.UiBold, bounds, corForte, Colado);
 
-        TextRenderer.DrawText(g, fraco, Theme.MarkSoft,
+        TextRenderer.DrawText(g, fraco, Theme.Ui,
             new Rectangle(bounds.X + largura, bounds.Y, Math.Max(0, bounds.Width - largura), bounds.Height),
             corFraca, Colado);
+    }
+
+    /// <summary>
+    /// A bolinha de estado das grades: 7 pixels, na cor do estado, antes do
+    /// rotulo em caixa alta.
+    ///
+    /// Existe porque a cor sozinha nao basta — uma em cada doze pessoas nao
+    /// distingue o vermelho do verde, e a forma redonda a esquerda de cada
+    /// linha e o que deixa a coluna de estado varrivel com o olho.
+    /// </summary>
+    public static void StatusDot(Graphics g, Rectangle bounds, Color cor)
+    {
+        const int diametro = 7;
+
+        var y = bounds.Y + (bounds.Height - diametro) / 2;
+        var modo = g.SmoothingMode;
+
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        using (var pincel = new SolidBrush(cor))
+            g.FillEllipse(pincel, bounds.X, y, diametro, diametro);
+
+        g.SmoothingMode = modo;
     }
 }
 
@@ -125,7 +147,7 @@ internal sealed class PillButton : Button, IPaintsItself
 
         FlatStyle = FlatStyle.Flat;
         FlatAppearance.BorderSize = 0;
-        Font = Theme.Ui;
+        Font = kind == ButtonKind.Primary ? Theme.ButtonBold : Theme.Button;
         Height = 32;
         Margin = new Padding(0, 0, 8, 0);
         Cursor = Cursors.Hand;
@@ -155,10 +177,10 @@ internal sealed class PillButton : Button, IPaintsItself
         var (preenchimento, texto, contorno) = Colors();
 
         if (preenchimento.A > 0)
-            Theme.FillRounded(g, bounds, preenchimento, 7f);
+            Theme.FillRounded(g, bounds, preenchimento, 8f);
 
         if (contorno.A > 0)
-            Theme.DrawRounded(g, bounds, contorno, 7f);
+            Theme.DrawRounded(g, bounds, contorno, 8f);
 
         UiKit.Text(g, Text, Font, ClientRectangle, texto, UiKit.Centered);
 
@@ -177,11 +199,13 @@ internal sealed class PillButton : Button, IPaintsItself
         {
             ButtonKind.Primary => (
                 _pressed ? Theme.AccentPressed : _hover ? Theme.AccentHover : Theme.Accent,
-                Theme.OnAccent,
+                Theme.Canvas,
                 Color.Transparent),
 
+            // Fantasma: sem preenchimento nem contorno em repouso. O fundo so
+            // aparece sob o cursor, e e o mesmo degrau de tom do botao comum.
             ButtonKind.Ghost => (
-                _pressed ? Theme.SurfaceHigh : _hover ? Theme.Blend(Theme.Canvas, Theme.Text, 0.07) : Color.Transparent,
+                _pressed ? Theme.Blend(Theme.SurfaceHigh, Theme.Text, 0.07) : _hover ? Theme.SurfaceHigh : Color.Transparent,
                 _hover ? Theme.Text : Theme.TextMuted,
                 Color.Transparent),
 
@@ -328,16 +352,16 @@ internal sealed class NavRail : Panel, IPaintsItself
         if (HeaderMark is not null)
         {
             g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-            g.DrawImage(HeaderMark, new Rectangle(14, 16, 26, 26));
+            g.DrawImage(HeaderMark, new Rectangle(14, 21, 26, 26));
             textoX = 48;
         }
 
         // Altura folgada de proposito: com o retangulo justo, o Windows corta a
         // perna do 'y'.
-        UiKit.WordMark(g, new Rectangle(textoX, 14, Width - textoX - 10, 18),
+        UiKit.WordMark(g, new Rectangle(textoX, 20, Width - textoX - 10, 18),
             HeaderTitle, HeaderTitleTail, Theme.Text, Theme.TextMuted);
 
-        UiKit.Text(g, HeaderSubtitle, Theme.UiSmall, new Rectangle(textoX, 33, Width - textoX - 10, 16),
+        UiKit.Text(g, HeaderSubtitle, Theme.UiSmall, new Rectangle(textoX, 38, Width - textoX - 10, 16),
             Theme.TextFaint, UiKit.LeftMiddle);
     }
 }
@@ -382,15 +406,19 @@ internal sealed class NavItem : Control, IPaintsItself
         var bounds = new Rectangle(0, 2, Width, Height - 4);
 
         if (_selected) Theme.FillRounded(g, bounds, Theme.AccentSoft, 8f);
-        else if (_hover) Theme.FillRounded(g, bounds, Theme.Blend(Theme.Rail, Theme.Text, 0.06), 8f);
+        else if (_hover) Theme.FillRounded(g, bounds, Theme.SurfaceHigh, 8f);
 
-        var cor = _selected ? Theme.AccentText : _hover ? Theme.Text : Theme.TextMuted;
+        // O icone e o texto nao andam juntos: o icone carrega a cor — verde no
+        // item ativo, apagado nos demais — e o texto carrega o peso. Dois sinais
+        // diferentes para a mesma coisa cansam menos que dois iguais.
+        var icone = _selected ? Theme.AccentHover : _hover ? Theme.TextMuted : Theme.TextFaint;
+        var texto = _selected || _hover ? Theme.Text : Theme.TextMuted;
 
-        DrawGlyph(g, new Rectangle(12, bounds.Y + (bounds.Height - 16) / 2, 16, 16), cor);
+        DrawGlyph(g, new Rectangle(12, bounds.Y + (bounds.Height - 16) / 2, 16, 16), icone);
 
         UiKit.Text(g, Text, _selected ? Theme.UiBold : Theme.Ui,
             new Rectangle(38, bounds.Y, Width - 46, bounds.Height),
-            _selected ? Theme.Text : cor, UiKit.LeftMiddle);
+            texto, UiKit.LeftMiddle);
     }
 
     /// <summary>

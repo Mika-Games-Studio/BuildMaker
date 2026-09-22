@@ -21,12 +21,12 @@ internal interface IPaintsItself;
 /// parcimonia: se tudo destaca, nada destaca.
 ///
 /// O verde e claro demais para carregar texto branco — da 2,7:1, reprovado em
-/// qualquer leitura. Por isso o que se escreve em cima dele e o preto, em
-/// <see cref="OnAccent"/>, que da 7,5:1.
+/// qualquer leitura. Por isso o que se escreve em cima do <see cref="Accent"/>
+/// e sempre o <see cref="Canvas"/>, que da 7,5:1.
 ///
 /// O contrario tambem vale: o verde 500 sobre o fundo preto fica em 4,4:1, no
 /// limite para texto pequeno. Quando o verde e a tinta, e nao o preenchimento,
-/// quem entra e o 400 de <see cref="AccentText"/>, que passa de 8:1.
+/// quem entra e o <see cref="AccentHover"/>, o 400, que passa de 8:1.
 ///
 /// O WinForms nao tem tema. Cada controle pinta com as cores do sistema, entao
 /// tudo aqui e aplicado controle a controle, e os que o sistema insiste em
@@ -69,21 +69,14 @@ public static class Theme
     /// </summary>
     public static readonly Color Accent = Rgb(0x6FAB16);
 
+    /// <summary>
+    /// O verde 400. E o hover do botao primario e, no resto da janela, o verde
+    /// como tinta: icone do item ativo, codigo do device flow, build em
+    /// execucao. Sobre o preto o 500 fica em 4,4:1 e este passa de 8:1.
+    /// </summary>
     public static readonly Color AccentHover = Rgb(0x89CE22);
+
     public static readonly Color AccentPressed = Rgb(0x5B8D11);
-
-    /// <summary>
-    /// O verde quando ele e tinta e nao preenchimento: item ativo da navegacao,
-    /// codigo do device flow, build em execucao. E o 400 da escala, porque o
-    /// 500 sobre o preto fica em 4,4:1 e este passa de 8:1.
-    /// </summary>
-    public static readonly Color AccentText = Rgb(0x89CE22);
-
-    /// <summary>
-    /// O que se escreve em cima do verde. Claro demais para texto branco: o
-    /// preto da marca e o que passa em contraste.
-    /// </summary>
-    public static readonly Color OnAccent = Rgb(0x000000);
 
     /// <summary>Verde diluido no fundo: selecao e item ativo, sem berrar.</summary>
     public static readonly Color AccentSoft = Rgb(0x1D280B);
@@ -107,6 +100,24 @@ public static class Theme
     public static readonly Color Danger = Rgb(0xE2593C);
     public static readonly Color Warning = Rgb(0xE0A21C);
     public static readonly Color Info = Rgb(0x62A8C4);
+
+    // ----------------------------------------------------------------- log
+
+    /// <summary>
+    /// O fundo da area de log. Meio degrau acima do cartao: o log e um bloco de
+    /// texto denso, e um fundo proprio o separa do resto sem precisar de moldura.
+    /// </summary>
+    public static readonly Color LogSurface = Rgb(0x171F0B);
+
+    /// <summary>
+    /// A mensagem de uma linha de erro. O <see cref="Danger"/> cheio fica no
+    /// rotulo, que e curto; uma frase inteira naquele vermelho cansa de ler, e
+    /// justamente a frase de erro e a que precisa ser lida ate o fim.
+    /// </summary>
+    public static readonly Color DangerSoft = Rgb(0xF3A08D);
+
+    /// <summary>O mesmo, para aviso.</summary>
+    public static readonly Color WarningSoft = Rgb(0xEDC66E);
 
     // ------------------------------------------------- compatibilidade de nome
 
@@ -132,14 +143,21 @@ public static class Theme
     public static readonly Font Mono = new(MonoFamily, 9f);
 
     /// <summary>
-    /// A assinatura no topo da coluna: 'Build' em peso cheio, 'Maker' em peso
-    /// normal, os dois no mesmo corpo. Um degrau acima do texto corrente, sem
-    /// chegar ao tamanho de titulo de pagina — quem manda na tela e o titulo
-    /// da pagina, nao o nome do programa.
+    /// O corpo dos botoes: meio ponto acima do texto corrente. Rotulo de botao
+    /// e alvo de clique, e alvo de clique se le de relance.
     /// </summary>
-    public static readonly Font Mark = new(UiFamily, 11f, FontStyle.Bold);
+    public static readonly Font Button = new(UiFamily, 9.5f);
 
-    public static readonly Font MarkSoft = new(UiFamily, 11f);
+    public static readonly Font ButtonBold = new(UiFamily, 9.5f, FontStyle.Bold);
+
+    /// <summary>Cabecalho de coluna de grade: pequeno, mas em peso cheio.</summary>
+    public static readonly Font ColumnHeader = new(UiFamily, 8.25f, FontStyle.Bold);
+
+    /// <summary>
+    /// O rotulo de estado nas grades. Caixa alta em corpo pequeno pede peso, ou
+    /// vira um borrao.
+    /// </summary>
+    public static readonly Font StatusLabel = new(UiFamily, 8.25f, FontStyle.Bold);
 
     private static string FirstInstalled(params string[] candidates)
     {
@@ -325,8 +343,8 @@ public static class Theme
         grid.CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal;
         grid.ForeColor = Text;
         grid.Font = Ui;
-        grid.RowTemplate.Height = 30;
-        grid.ColumnHeadersHeight = 32;
+        grid.RowTemplate.Height = 38;
+        grid.ColumnHeadersHeight = 34;
         grid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing;
 
         grid.DefaultCellStyle.BackColor = Surface;
@@ -336,15 +354,31 @@ public static class Theme
         grid.DefaultCellStyle.Padding = new Padding(8, 0, 4, 0);
 
         grid.ColumnHeadersDefaultCellStyle.BackColor = Surface;
-        grid.ColumnHeadersDefaultCellStyle.ForeColor = TextMuted;
+        grid.ColumnHeadersDefaultCellStyle.ForeColor = TextFaint;
         grid.ColumnHeadersDefaultCellStyle.SelectionBackColor = Surface;
-        grid.ColumnHeadersDefaultCellStyle.SelectionForeColor = TextMuted;
-        grid.ColumnHeadersDefaultCellStyle.Font = UiSmallBold;
+        grid.ColumnHeadersDefaultCellStyle.SelectionForeColor = TextFaint;
+        grid.ColumnHeadersDefaultCellStyle.Font = ColumnHeader;
         grid.ColumnHeadersDefaultCellStyle.Padding = new Padding(8, 0, 4, 0);
         grid.ColumnHeadersBorderStyle = DataGridViewHeaderBorderStyle.None;
 
         grid.RowHeadersDefaultCellStyle.BackColor = Surface;
         grid.RowHeadersDefaultCellStyle.ForeColor = TextMuted;
+
+        // O filete embaixo do cabecalho e mais forte que o das linhas: ele
+        // separa o rotulo do dado, e os das linhas so separam dado de dado.
+        // O DataGridView nao tem propriedade para isso, entao ele e pintado.
+        grid.CellPainting += (_, e) =>
+        {
+            if (e.RowIndex != -1 || e.ColumnIndex < 0) return;
+
+            e.Paint(e.ClipBounds, e.PaintParts);
+
+            using var caneta = new Pen(Border);
+            e.Graphics!.DrawLine(caneta,
+                e.CellBounds.Left, e.CellBounds.Bottom - 1, e.CellBounds.Right, e.CellBounds.Bottom - 1);
+
+            e.Handled = true;
+        };
 
         UseDarkScrollbars(grid);
     }
@@ -356,9 +390,9 @@ public static class Theme
         grid.ViewForeColor = Text;
         grid.ViewBorderColor = BorderSoft;
         grid.LineColor = BorderSoft;
-        grid.CategoryForeColor = AccentText;
+        grid.CategoryForeColor = TextMuted;
         grid.CategorySplitterColor = BorderSoft;
-        grid.HelpBackColor = SurfaceHigh;
+        grid.HelpBackColor = Rail;
         grid.HelpForeColor = TextMuted;
         grid.HelpBorderColor = Border;
         grid.CommandsBackColor = Surface;

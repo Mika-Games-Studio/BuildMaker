@@ -273,7 +273,7 @@ internal sealed class StepHeader : Control, IPaintsItself
         Theme.FillRounded(g, new Rectangle(0, 2, 22, 22), Theme.AccentSoft, 11f);
 
         UiKit.Text(g, _numero.ToString(), Theme.UiSmallBold, new Rectangle(0, 2, 22, 22),
-            Theme.AccentText, UiKit.Centered);
+            Theme.AccentHover, UiKit.Centered);
 
         UiKit.Text(g, Text, Theme.UiBold, new Rectangle(34, 0, Width - 34, Height),
             Theme.Text, UiKit.LeftMiddle);

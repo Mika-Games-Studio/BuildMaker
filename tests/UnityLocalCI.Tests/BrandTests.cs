@@ -32,6 +32,11 @@ public class BrandTests
 
         // estados de build
         0x3FB58E, 0xE2593C, 0xE0A21C, 0x62A8C4,
+
+        // A area de log, que o documento de telas especifica a parte: um fundo
+        // proprio meio degrau acima do cartao, e as versoes claras de erro e
+        // aviso para a mensagem — a cor cheia fica no rotulo, que e curto.
+        0x171F0B, 0xF3A08D, 0xEDC66E,
     ];
 
     private static IEnumerable<(string Nome, Color Cor)> CoresDoTema()
@@ -57,8 +62,8 @@ public class BrandTests
     /// </summary>
     [Fact]
     public void Texto_sobre_o_verde_passa_em_contraste()
-        => Assert.True(Contraste(Theme.OnAccent, Theme.Accent) >= 4.5,
-            $"contraste de {Contraste(Theme.OnAccent, Theme.Accent):0.0}:1");
+        => Assert.True(Contraste(Theme.Canvas, Theme.Accent) >= 4.5,
+            $"contraste de {Contraste(Theme.Canvas, Theme.Accent):0.0}:1");
 
     /// <summary>
     /// O caminho contrario: quando o verde e a tinta sobre o fundo preto, o 500
@@ -67,8 +72,8 @@ public class BrandTests
     [Fact]
     public void Verde_como_tinta_e_mais_claro_que_o_verde_de_preenchimento()
     {
-        Assert.True(Contraste(Theme.AccentText, Theme.Canvas) > Contraste(Theme.Accent, Theme.Canvas));
-        Assert.True(Contraste(Theme.AccentText, Theme.Canvas) >= 4.5);
+        Assert.True(Contraste(Theme.AccentHover, Theme.Canvas) > Contraste(Theme.Accent, Theme.Canvas));
+        Assert.True(Contraste(Theme.AccentHover, Theme.Canvas) >= 4.5);
     }
 
     /// <summary>

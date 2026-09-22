@@ -42,7 +42,7 @@ public sealed class GeneralView(CiOptions options)
 
     // ------------------------------------------------------------------ fila
 
-    [Category("Fila")]
+    [Category("FILA")]
     [Description("Teto de builds simultâneas. O valor que vale é o menor entre este e RAM instalada / 16 GB.")]
     public int MaxConcurrentBuilds
     {
@@ -50,7 +50,7 @@ public sealed class GeneralView(CiOptions options)
         set => _scheduler.MaxConcurrentBuilds = value;
     }
 
-    [Category("Fila")]
+    [Category("FILA")]
     [Description("RAM livre mínima para uma build começar. Abaixo disso o job é adiado, nunca descartado.")]
     public int MinFreeRamGb
     {
@@ -58,7 +58,7 @@ public sealed class GeneralView(CiOptions options)
         set => _scheduler.MinFreeRamGb = value;
     }
 
-    [Category("Fila")]
+    [Category("FILA")]
     [Description("De quanto em quanto tempo reavaliar um job que está adiado por falta de recurso.")]
     public int ResourceRecheckSeconds
     {
@@ -66,7 +66,7 @@ public sealed class GeneralView(CiOptions options)
         set => _scheduler.ResourceRecheckSeconds = value;
     }
 
-    [Category("Fila")]
+    [Category("FILA")]
     [Description("De quanto em quanto tempo tentar reenviar artefatos que não puderam ser copiados.")]
     public int PendingCopyRetryMinutes
     {
@@ -76,7 +76,7 @@ public sealed class GeneralView(CiOptions options)
 
     // --------------------------------------------------------------- arquivos
 
-    [Category("Arquivos de status")]
+    [Category("ARQUIVOS DE STATUS")]
     [Description("Arquivo único com uma linha por projeto. É o que responde \"a build saiu?\" sem abrir nada.")]
     [Editor(typeof(FilePathEditor), typeof(UITypeEditor))]
     public string? GlobalStatusFile
@@ -85,7 +85,7 @@ public sealed class GeneralView(CiOptions options)
         set => _scheduler.GlobalStatusFile = Texto.OuNulo(value);
     }
 
-    [Category("Estado e logs")]
+    [Category("ESTADO E LOGS")]
     [Description("Banco SQLite com o histórico das builds. Apagá-lo perde o histórico, não as builds.")]
     [Editor(typeof(FilePathEditor), typeof(UITypeEditor))]
     public string DatabasePath
@@ -94,7 +94,7 @@ public sealed class GeneralView(CiOptions options)
         set => _state.DatabasePath = Texto.Limpo(value);
     }
 
-    [Category("Estado e logs")]
+    [Category("ESTADO E LOGS")]
     [Description("Onde ficam os logs completos de cada build.")]
     [Editor(typeof(FolderPathEditor), typeof(UITypeEditor))]
     public string LogFolder
@@ -105,7 +105,7 @@ public sealed class GeneralView(CiOptions options)
 
     // ------------------------------------------------------ padroes herdados
 
-    [Category("Padrões dos projetos")]
+    [Category("PADRÕES DOS PROJETOS")]
     [Description("Pasta de trabalho onde o zip é montado antes de ser copiado para o destino.")]
     [Editor(typeof(FolderPathEditor), typeof(UITypeEditor))]
     public string? StagingFolder
@@ -114,7 +114,7 @@ public sealed class GeneralView(CiOptions options)
         set => _publishing.StagingFolder = Texto.OuNulo(value);
     }
 
-    [Category("Padrões dos projetos")]
+    [Category("PADRÕES DOS PROJETOS")]
     [Description("Versão do editor usada por quem não definir a própria. Cada projeto costuma ter a sua.")]
     public string? EditorVersion
     {
@@ -122,7 +122,7 @@ public sealed class GeneralView(CiOptions options)
         set => _unity.EditorVersion = Texto.OuNulo(value);
     }
 
-    [Category("Padrões dos projetos")]
+    [Category("PADRÕES DOS PROJETOS")]
     [Description("Plataforma do build. WebGL é o padrão.")]
     public string? BuildTarget
     {
@@ -247,7 +247,7 @@ public sealed class ProjectView
     /// orfao e o gatilho apontando para o nome velho, tudo em silencio. Ele e
     /// definido uma vez, ao vincular o projeto.
     /// </summary>
-    [Category("Projeto")]
+    [Category("PROJETO")]
     [ReadOnly(true)]
     [Description("Definido ao vincular o projeto. Identifica a fila, o histórico, o arquivo de configuração e o gatilho — por isso não muda depois.")]
     public string Name
@@ -256,7 +256,7 @@ public sealed class ProjectView
         set => _project.Name = Texto.Limpo(value);
     }
 
-    [Category("Projeto")]
+    [Category("PROJETO")]
     [Description("Desligado, o projeto fica na configuração mas não é observado nem construído.")]
     public bool Enabled
     {
@@ -264,7 +264,7 @@ public sealed class ProjectView
         set => _project.Enabled = value;
     }
 
-    [Category("Repositório")]
+    [Category("REPOSITÓRIO")]
     [Description("URL do repositório remoto. O PAT nunca entra aqui.")]
     public string Url
     {
@@ -272,7 +272,7 @@ public sealed class ProjectView
         set => _repository.Url = Texto.Limpo(value);
     }
 
-    [Category("Repositório")]
+    [Category("REPOSITÓRIO")]
     [Description(
         "Branch observada. A build dispara quando o HEAD dela muda. A lista vem do repositório — do clone " +
         "local na hora, e do servidor assim que ele responder. Dá para digitar uma que ainda não existe.")]
@@ -290,7 +290,7 @@ public sealed class ProjectView
     [Browsable(false)]
     public IReadOnlyList<string> KnownBranches => _branches?.Known(_repository.Url) ?? [];
 
-    [Category("Repositório")]
+    [Category("REPOSITÓRIO")]
     [Description(
         "Clone dedicado e permanente DO CI. Dois projetos nunca podem compartilhar o mesmo caminho: o Unity " +
         "tranca a Library do diretório. Não aponte para a sua pasta de trabalho: o CI apaga o que não estiver " +
@@ -328,7 +328,7 @@ public sealed class ProjectView
     /// conectada" e "este projeto tem uma excecao" e justamente o que alguem
     /// precisa saber quando um projeto falha no clone e o outro nao.
     /// </summary>
-    [Category("Repositório")]
+    [Category("REPOSITÓRIO")]
     [DisplayName("Credencial")]
     [ReadOnly(true)]
     [Description(
@@ -350,7 +350,7 @@ public sealed class ProjectView
         }
     }
 
-    [Category("Unity")]
+    [Category("UNITY")]
     [Description(
         "Versão exata do editor. Vem sozinha do ProjectSettings\\ProjectVersion.txt do projeto quando o " +
         "workspace existe. Vazio herda de Defaults. Nunca é adivinhada.")]
@@ -369,7 +369,7 @@ public sealed class ProjectView
     /// enxergar, sem salvar nada, que a configuracao ficou para tras depois de
     /// o time subir o projeto para outra versao do Unity.
     /// </summary>
-    [Category("Unity")]
+    [Category("UNITY")]
     [DisplayName("EditorVersion no disco")]
     [Description("O que o ProjectVersion.txt do workspace diz agora. Se divergir do campo acima, a configuração está desatualizada.")]
     [ReadOnly(true)]
@@ -388,6 +388,27 @@ public sealed class ProjectView
     }
 
     /// <summary>
+    /// A frase do rodape quando a versao gravada e a do disco discordam, ou
+    /// nulo quando estao de acordo.
+    ///
+    /// Fora do PropertyGrid de proposito: e um aviso sobre o conjunto, nao um
+    /// campo que se edita.
+    /// </summary>
+    [Browsable(false)]
+    public string? DivergenciaDeEditor
+    {
+        get
+        {
+            var noDisco = Detect(_repository.WorkspacePath);
+
+            return noDisco is not null && Diverge(noDisco)
+                ? $"EditorVersion diverge do projeto clonado: {_project.Unity!.EditorVersion!.Trim()} gravado, " +
+                  $"{noDisco} no disco."
+                : null;
+        }
+    }
+
+    /// <summary>
     /// A versao gravada e a do disco discordam. Campo vazio nao diverge: ele
     /// herda de Defaults de proposito.
     /// </summary>
@@ -399,7 +420,7 @@ public sealed class ProjectView
                && !string.Equals(gravada.Trim(), noDisco, StringComparison.OrdinalIgnoreCase);
     }
 
-    [Category("Unity")]
+    [Category("UNITY")]
     [Description("Plataforma do build. Vazio herda de Defaults, que vem como WebGL.")]
     [TypeConverter(typeof(BuildTargetConverter))]
     public string? BuildTarget
@@ -412,7 +433,7 @@ public sealed class ProjectView
         }
     }
 
-    [Category("Publicação")]
+    [Category("PUBLICAÇÃO")]
     [Description("Pasta onde o time pega o zip. É a interface para quem só quer o artefato.")]
     [Editor(typeof(FolderPathEditor), typeof(UITypeEditor))]
     public string? ArtifactFolder
@@ -421,7 +442,7 @@ public sealed class ProjectView
         set => _publishing.ArtifactFolder = Texto.OuNulo(value);
     }
 
-    [Category("Publicação")]
+    [Category("PUBLICAÇÃO")]
     [Description("Tocar este arquivo enfileira uma build do HEAD atual. O serviço o apaga ao consumir.")]
     [Editor(typeof(FilePathEditor), typeof(UITypeEditor))]
     public string? ManualTriggerFile

@@ -5,7 +5,9 @@ using UnityLocalCI.Core.Hosting;
 using UnityLocalCI.Core.Pipeline;
 using UnityLocalCI.Core.Publishing;
 using UnityLocalCI.Core.Queue;
+using Microsoft.Extensions.Logging;
 using UnityLocalCI.Core.State;
+using UnityLocalCI.Core.Unity;
 using UnityLocalCI.Core.Watching;
 
 namespace UnityLocalCI.App;
@@ -25,9 +27,6 @@ public sealed class MainForm : Form
 {
     private static readonly TimeSpan RefreshInterval = TimeSpan.FromSeconds(3);
 
-    /// <summary>Teto do texto da aba de log, em caracteres.</summary>
-    private const int MaxServiceLogChars = 400_000;
-
     private readonly HostController _controller;
     private readonly LiveLog _liveLog;
     private readonly string _configPath;
@@ -35,8 +34,21 @@ public sealed class MainForm : Form
 
     private readonly DataGridView _projectsGrid = NewGrid();
     private readonly DataGridView _buildsGrid = NewGrid();
-    private readonly TextBox _buildLog = NewMonospaceBox();
-    private readonly TextBox _serviceLog = NewMonospaceBox();
+    private readonly LogView _buildLog = new() { Dock = DockStyle.Fill };
+
+    /// <summary>De qual build e o log do painel de baixo.</summary>
+    private readonly Label _buildLogTitle = new()
+    {
+        Dock = DockStyle.Top,
+        AutoSize = false,
+        Height = 26,
+        Font = Theme.UiBold,
+        ForeColor = Theme.TextMuted,
+        BackColor = Theme.Surface,
+        Padding = new Padding(2, 4, 2, 6),
+        Text = "Log da build",
+    };
+    private readonly LogView _serviceLog = new(novoNoTopo: true) { Dock = DockStyle.Fill };
     private readonly ConfigPanel _configPanel;
 
     private readonly StatusBar _status = new();
@@ -198,13 +210,14 @@ public sealed class MainForm : Form
             TextColumn("Projeto", 150),
             TextColumn("Estado", 110),
             TextColumn("Última build", 130),
-            TextColumn("Commit", 90),
+            MonoColumn("Commit", 90),
 
             // Mais larga que a da pagina de builds: enquanto a build corre esta
             // coluna carrega a etapa junto com o tempo.
             TextColumn("Duração", 150),
             TextColumn("Artefato", 300));
 
+        PaintStatusColumn(_projectsGrid, statusColumn: 1);
         StretchLastColumn(_projectsGrid);
 
         return NewPage(header, NewCard(_projectsGrid));
@@ -222,10 +235,11 @@ public sealed class MainForm : Form
             TextColumn("Resultado", 110),
             TextColumn("Quando", 110),
             TextColumn("Duração", 90),
-            TextColumn("Commit", 90),
+            MonoColumn("Commit", 90),
             TextColumn("Autor", 130),
             TextColumn("Erro", 320));
 
+        PaintStatusColumn(_buildsGrid, statusColumn: 2);
         StretchLastColumn(_buildsGrid);
         _buildsGrid.SelectionChanged += (_, _) => ShowSelectedBuildLog();
 
@@ -238,7 +252,9 @@ public sealed class MainForm : Form
         };
 
         split.Panel1.Controls.Add(NewCard(_buildsGrid));
-        split.Panel2.Controls.Add(NewCard(_buildLog));
+        var cartaoDoLog = NewCard(_buildLog);
+        cartaoDoLog.Controls.Add(_buildLogTitle);
+        split.Panel2.Controls.Add(cartaoDoLog);
 
         // Depois de a janela existir: SplitterDistance lanca se for maior que a
         // altura atual do container, que no momento da montagem ainda e zero.
@@ -259,7 +275,7 @@ public sealed class MainForm : Form
             "Saída ao vivo do serviço: watchers, fila e publicação.");
 
         var limpar = new PillButton("Limpar", ButtonKind.Ghost) { Width = 90 };
-        limpar.Click += (_, _) => { _liveLog.Clear(); _serviceLog.Clear(); };
+        limpar.Click += (_, _) => { _liveLog.Clear(); _serviceLog.Limpar(); };
         header.Actions.Controls.Add(limpar);
 
         return NewPage(header, NewCard(_serviceLog));
@@ -323,7 +339,14 @@ public sealed class MainForm : Form
             var store = services.GetRequiredService<IBuildStore>();
             var options = services.GetRequiredService<Microsoft.Extensions.Options.IOptions<CiOptions>>().Value;
             var progresso = services.GetRequiredService<BuildProgress>();
-            var projects = ProjectResolver.ResolveEnabled(options);
+
+            // Aqui entram tambem os desligados, que o servico ignora: sumir com
+            // eles da tela faz a pessoa procurar um projeto que ela mesma
+            // desligou e concluir que a configuracao se perdeu. Eles aparecem
+            // apagados, dizendo DESLIGADO.
+            var projects = options.Projects
+                .Select(p => (Nome: p.Name, Ligado: p.Enabled))
+                .ToList();
 
             var rows = new List<string[]>();
             var builds = new List<BuildRecord>();
@@ -332,36 +355,40 @@ public sealed class MainForm : Form
 
             foreach (var project in projects)
             {
-                var recent = await store.GetRecentAsync(project.Name, 50, default);
+                var recent = await store.GetRecentAsync(project.Nome, 50, default);
                 builds.AddRange(recent);
 
-                var current = running.FirstOrDefault(b =>
-                    string.Equals(b.Project, project.Name, StringComparison.OrdinalIgnoreCase));
+                var current = project.Ligado
+                    ? running.FirstOrDefault(b =>
+                        string.Equals(b.Project, project.Nome, StringComparison.OrdinalIgnoreCase))
+                    : null;
 
                 var last = recent.FirstOrDefault(b => b.FinishedAt is not null);
 
-                rows.Add(current is not null
-                    ?
-                    [
-                        project.Name, "EM EXECUÇÃO", Local(current.StartedAt), current.ShortSha,
-                        Andamento(progresso, current), "—",
-                    ]
-                    : last is null
-                        ? [project.Name, "—", "nunca", "—", "—", "—"]
-                        :
+                rows.Add(!project.Ligado
+                    ? [project.Nome, DisabledLabel, "nunca", "—", "—", "—"]
+                    : current is not null
+                        ?
                         [
-                            project.Name,
-                            StatusFormatter.Label(last.Status),
-                            Local(last.FinishedAt),
-                            last.ShortSha,
-                            StatusFormatter.FormatDuration(last.DurationSeconds),
-                            last.PublishedPath ?? last.ArtifactPath ?? "—",
-                        ]);
+                            project.Nome, RunningLabel, Local(current.StartedAt), current.ShortSha,
+                            Andamento(progresso, current), "—",
+                        ]
+                        : last is null
+                            ? [project.Nome, "—", "nunca", "—", "—", "—"]
+                            :
+                            [
+                                project.Nome,
+                                StatusFormatter.Label(last.Status),
+                                Local(last.FinishedAt),
+                                last.ShortSha,
+                                StatusFormatter.FormatDuration(last.DurationSeconds),
+                                last.PublishedPath ?? last.ArtifactPath ?? "—",
+                            ]);
             }
 
             BeginInvoke(() =>
             {
-                Fill(_projectsGrid, rows, statusColumn: 1);
+                Fill(_projectsGrid, rows, statusColumn: 1, andamentoColumn: 4);
                 Fill(_buildsGrid, builds
                     .OrderByDescending(b => b.Id)
                     .Take(200)
@@ -398,9 +425,15 @@ public sealed class MainForm : Form
     ///
     /// So a celula de resultado recebe cor. Pintar a linha inteira de vermelho
     /// deixava o resto — projeto, commit, autor — dificil de ler por um dado que
-    /// cabe numa coluna so.
+    /// cabe numa coluna so. A excecao e o projeto desligado: ali nao ha nenhum
+    /// dado valendo, e a linha inteira apaga.
     /// </summary>
-    private static void Fill(DataGridView grid, IReadOnlyList<string[]> rows, int statusColumn)
+    /// <param name="andamentoColumn">
+    /// Coluna que muda de cor enquanto a build corre. Fica em verde para separar
+    /// o que esta acontecendo agora do que ja terminou.
+    /// </param>
+    private static void Fill(
+        DataGridView grid, IReadOnlyList<string[]> rows, int statusColumn, int? andamentoColumn = null)
     {
         while (grid.Rows.Count > rows.Count) grid.Rows.RemoveAt(grid.Rows.Count - 1);
         while (grid.Rows.Count < rows.Count) grid.Rows.Add();
@@ -416,11 +449,61 @@ public sealed class MainForm : Form
 
             if (statusColumn >= grid.ColumnCount) continue;
 
-            var celula = grid.Rows[r].Cells[statusColumn];
-            celula.Style.ForeColor = StatusColor(celula.Value as string);
-            celula.Style.SelectionForeColor = celula.Style.ForeColor;
-            celula.Style.Font = Theme.UiSmallBold;
+            var apagada = rows[r][statusColumn] == DisabledLabel;
+            var cor = apagada ? Theme.TextFaint : Theme.Text;
+
+            if (grid.Rows[r].DefaultCellStyle.ForeColor != cor)
+            {
+                grid.Rows[r].DefaultCellStyle.ForeColor = cor;
+                grid.Rows[r].DefaultCellStyle.SelectionForeColor = cor;
+            }
+
+            if (andamentoColumn is not { } coluna || coluna >= grid.ColumnCount) continue;
+
+            var tinta = rows[r][statusColumn] == RunningLabel ? Theme.AccentHover : cor;
+            var celula = grid.Rows[r].Cells[coluna];
+
+            if (celula.Style.ForeColor == tinta) continue;
+
+            celula.Style.ForeColor = tinta;
+            celula.Style.SelectionForeColor = tinta;
         }
+    }
+
+    /// <summary>O projeto cuja build esta correndo agora.</summary>
+    private const string RunningLabel = "EM EXECUÇÃO";
+
+    /// <summary>O projeto que existe na configuracao mas o servico nao observa.</summary>
+    private const string DisabledLabel = "DESLIGADO";
+
+    /// <summary>
+    /// A coluna de estado e pintada a mao: bolinha na cor do estado, depois o
+    /// rotulo em caixa alta na mesma cor.
+    ///
+    /// A bolinha nao e enfeite. Cor sozinha exclui quem nao distingue vermelho
+    /// de verde, e e ela que deixa a coluna varrivel de relance numa grade de
+    /// vinte linhas.
+    /// </summary>
+    private static void PaintStatusColumn(DataGridView grid, int statusColumn)
+    {
+        grid.CellPainting += (_, e) =>
+        {
+            if (e.RowIndex < 0 || e.ColumnIndex != statusColumn || e.Graphics is null) return;
+
+            e.PaintBackground(e.CellBounds, true);
+
+            var rotulo = e.FormattedValue as string ?? "";
+            var cor = StatusColor(rotulo);
+
+            var bolinha = new Rectangle(e.CellBounds.X + 8, e.CellBounds.Y, 7, e.CellBounds.Height);
+            UiKit.StatusDot(e.Graphics, bolinha, cor);
+
+            UiKit.Text(e.Graphics, rotulo, Theme.StatusLabel,
+                new Rectangle(e.CellBounds.X + 21, e.CellBounds.Y, e.CellBounds.Width - 25, e.CellBounds.Height),
+                cor, UiKit.LeftMiddle);
+
+            e.Handled = true;
+        };
     }
 
     private static Color StatusColor(string? label) => label switch
@@ -428,8 +511,9 @@ public sealed class MainForm : Form
         "SUCESSO" => Theme.Success,
         "FALHOU" => Theme.Danger,
         "INTERROMPIDA" or "CANCELADA" => Theme.Warning,
-        "EM EXECUÇÃO" => Theme.AccentText,
+        RunningLabel => Theme.AccentHover,
         "NA FILA" => Theme.Info,
+        DisabledLabel => Theme.TextFaint,
         _ => Theme.TextMuted,
     };
 
@@ -451,6 +535,11 @@ public sealed class MainForm : Form
         if (_selectedBuildId == id) return;
         _selectedBuildId = id;
 
+        // De qual build e o log que esta embaixo. Sem isto, trocar de linha
+        // troca o conteudo do painel sem nada dizer que trocou.
+        var projeto = linha.Cells[1].Value as string;
+        _buildLogTitle.Text = $"Log da build #{id}" + (projeto is null ? "" : " · " + projeto);
+
         var services = _controller.Services;
         if (services is null) return;
 
@@ -466,11 +555,12 @@ public sealed class MainForm : Form
                 ? await ReadSharedAsync(path)
                 : "(log nao encontrado em disco)";
 
-            BeginInvoke(() => _buildLog.Text = text);
+            BeginInvoke(() => _buildLog.Preencher(BuildLogLines(text)));
         }
         catch (Exception exception) when (exception is IOException or ObjectDisposedException)
         {
-            BeginInvoke(() => _buildLog.Text = "(nao foi possivel ler o log: " + exception.Message + ")");
+            BeginInvoke(() => _buildLog.Preencher(
+                [LogEntry.Corrida("(nao foi possivel ler o log: " + exception.Message + ")", LogTone.Error)]));
         }
     }
 
@@ -617,10 +707,7 @@ public sealed class MainForm : Form
     }
 
     private void LoadServiceLog()
-    {
-        _serviceLog.Lines = _liveLog.Snapshot().Select(Format).ToArray();
-        ScrollToEnd(_serviceLog);
-    }
+        => _serviceLog.Preencher(_liveLog.Snapshot().Select(Format));
 
     private void OnLogLine(LogLine line)
     {
@@ -628,30 +715,72 @@ public sealed class MainForm : Form
 
         try
         {
-            BeginInvoke(() =>
-            {
-                // A caixa cresce para sempre; o LiveLog, nao. Passando do teto,
-                // ela e recarregada das ultimas linhas que ele guarda. Sem isto,
-                // um programa que fica semanas aberto vai ficando lento a cada
-                // repintura de um texto de megabytes.
-                if (_serviceLog.TextLength > MaxServiceLogChars) LoadServiceLog();
-
-                _serviceLog.AppendText(Format(line) + Environment.NewLine);
-                ScrollToEnd(_serviceLog);
-            });
+            BeginInvoke(() => _serviceLog.Anexar(Format(line)));
         }
         catch (ObjectDisposedException) { /* janela fechando */ }
         catch (InvalidOperationException) { /* handle indo embora */ }
     }
 
-    private static string Format(LogLine line)
-        => $"{line.At:HH:mm:ss}  {line.Level.ToString().ToLowerInvariant()[..4],-4}  {line.Category,-22}  {line.Message}";
+    /// <summary>
+    /// Uma linha do servico virando colunas: hora, nivel em tres letras,
+    /// categoria e mensagem.
+    ///
+    /// O nivel e abreviado de proposito. 'Information' e 'Warning' tem larguras
+    /// diferentes e empurrariam a categoria de linha para linha; com INF, WRN e
+    /// ERR as quatro colunas ficam paradas no lugar, e e isso que permite achar
+    /// os erros descendo o olho pela coluna em vez de ler tudo.
+    /// </summary>
+    private static LogEntry Format(LogLine line) => new(
+        line.At.ToString("HH:mm:ss"),
+        Nivel(line.Level),
+        line.Category,
+        line.Message,
+        line.Level switch
+        {
+            LogLevel.Error or LogLevel.Critical => LogTone.Error,
+            LogLevel.Warning => LogTone.Warning,
+            LogLevel.Trace or LogLevel.Debug => LogTone.Muted,
+            _ => LogTone.Normal,
+        });
 
-    private static void ScrollToEnd(TextBox box)
+    private static string Nivel(LogLevel level) => level switch
     {
-        box.SelectionStart = box.TextLength;
-        box.ScrollToCaret();
-    }
+        LogLevel.Trace => "TRC",
+        LogLevel.Debug => "DBG",
+        LogLevel.Information => "INF",
+        LogLevel.Warning => "WRN",
+        LogLevel.Error => "ERR",
+        LogLevel.Critical => "CRT",
+        _ => "",
+    };
+
+    /// <summary>
+    /// O log de build nao tem colunas: e a saida crua do Unity misturada com as
+    /// linhas do pipeline, e reformatar a saida do Unity atrapalharia quem
+    /// procura a mensagem original. O que se faz aqui e so dar cor ao que o
+    /// proprio pipeline marcou como erro ou aviso.
+    /// </summary>
+    private static IEnumerable<LogEntry> BuildLogLines(string texto)
+        => texto.Split('\n').Select(bruta =>
+        {
+            var linha = bruta.TrimEnd('\r');
+
+            var tom =
+                linha.StartsWith("ETAPA ", StringComparison.Ordinal) ||
+                linha.Contains(UnityLogParser.MarkedErrorPrefix, StringComparison.Ordinal) ||
+                linha.Contains("): error ", StringComparison.Ordinal) ? LogTone.Error :
+
+                linha.StartsWith("AVISO:", StringComparison.Ordinal) ||
+                linha.Contains(UnityLogParser.MarkedWarningPrefix, StringComparison.Ordinal) ||
+                linha.Contains("): warning ", StringComparison.Ordinal) ? LogTone.Warning :
+
+                linha.StartsWith("---", StringComparison.Ordinal) ||
+                linha.StartsWith("===", StringComparison.Ordinal) ? LogTone.Muted :
+
+                LogTone.Normal;
+
+            return LogEntry.Corrida(linha, tom);
+        });
 
     // --------------------------------------------------------------- utilidades
 
@@ -679,21 +808,19 @@ public sealed class MainForm : Form
         last.MinimumWidth = 160;
     }
 
-    private static TextBox NewMonospaceBox() => new()
-    {
-        Dock = DockStyle.Fill,
-        Multiline = true,
-        ReadOnly = true,
-        ScrollBars = ScrollBars.Both,
-        WordWrap = false,
-        Font = Theme.Mono,
-        BackColor = Theme.Surface,
-        ForeColor = Theme.Blend(Theme.Text, Theme.TextMuted, 0.35),
-        BorderStyle = BorderStyle.None,
-    };
-
     private static DataGridViewTextBoxColumn TextColumn(string header, int width)
         => new() { HeaderText = header, Width = width, SortMode = DataGridViewColumnSortMode.NotSortable };
+
+    /// <summary>
+    /// Coluna de dado tecnico — sha, caminho. Monoespacada porque se compara
+    /// caractere a caractere com o que esta no Git, e nao se le como frase.
+    /// </summary>
+    private static DataGridViewTextBoxColumn MonoColumn(string header, int width)
+    {
+        var coluna = TextColumn(header, width);
+        coluna.DefaultCellStyle.Font = Theme.Mono;
+        return coluna;
+    }
 
     private static string Local(DateTimeOffset? value)
         => value is null ? "—" : value.Value.ToLocalTime().ToString("dd/MM HH:mm");
@@ -708,12 +835,16 @@ public sealed class MainForm : Form
     /// </summary>
     private static string Andamento(BuildProgress progresso, BuildRecord build)
     {
-        var corrido = build.StartedAt is { } inicio
-            ? StatusFormatter.FormatDuration((int)(DateTimeOffset.UtcNow - inicio).TotalSeconds)
-            : "—";
+        if (build.StartedAt is not { } inicio) return "—";
+
+        // mm:ss, e nao "4 min 12 s": esta celula e relida a cada tres segundos
+        // e o relogio precisa ocupar sempre a mesma largura, senao o numero
+        // dança na coluna.
+        var corrido = DateTimeOffset.UtcNow - inicio;
+        var relogio = $"{(int)corrido.TotalMinutes:00}:{corrido.Seconds:00}";
 
         var etapa = progresso.Etapa(build.Id);
-        return etapa is null ? corrido : etapa + " · " + corrido;
+        return etapa is null ? relogio : etapa + " · " + relogio;
     }
 
     private static string FirstLine(string? text)
