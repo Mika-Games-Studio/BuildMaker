@@ -755,15 +755,32 @@ public sealed class MainForm : Form
     };
 
     /// <summary>
-    /// O log de build nao tem colunas: e a saida crua do Unity misturada com as
-    /// linhas do pipeline, e reformatar a saida do Unity atrapalharia quem
-    /// procura a mensagem original. O que se faz aqui e so dar cor ao que o
-    /// proprio pipeline marcou como erro ou aviso.
+    /// O log de build em colunas: hora, etapa e mensagem.
+    ///
+    /// A hora vem carimbada no arquivo, linha a linha. A etapa nao: ela e
+    /// deduzida dos marcadores '--- Sync ---' que o pipeline escreve, e vale
+    /// dali para baixo. E assim que as dezessete mil linhas que o Unity despeja
+    /// ganham a coluna de etapa sem o pipeline ter de repeti-la em cada uma.
+    ///
+    /// A mensagem em si nao e reformatada: quem procura um erro do Unity
+    /// procura pelo texto exato que o Unity escreveu.
     /// </summary>
     private static IEnumerable<LogEntry> BuildLogLines(string texto)
-        => texto.Split('\n').Select(bruta =>
+    {
+        var etapa = "";
+
+        foreach (var bruta in texto.Split('\n'))
         {
-            var linha = bruta.TrimEnd('\r');
+            var (hora, linha) = BuildLogStamp.Split(bruta.TrimEnd('\r'));
+
+            // O marcador de etapa deixa de ser uma linha de conteudo: agora ele
+            // e a coluna. Vira uma linha so, dizendo que a etapa comecou.
+            if (linha.StartsWith("--- ", StringComparison.Ordinal) && linha.EndsWith(" ---", StringComparison.Ordinal))
+            {
+                etapa = linha[4..^4].Trim();
+                yield return new LogEntry(hora, "", etapa, "etapa iniciada", LogTone.Muted);
+                continue;
+            }
 
             var tom =
                 linha.StartsWith("ETAPA ", StringComparison.Ordinal) ||
@@ -774,13 +791,17 @@ public sealed class MainForm : Form
                 linha.Contains(UnityLogParser.MarkedWarningPrefix, StringComparison.Ordinal) ||
                 linha.Contains("): warning ", StringComparison.Ordinal) ? LogTone.Warning :
 
-                linha.StartsWith("---", StringComparison.Ordinal) ||
                 linha.StartsWith("===", StringComparison.Ordinal) ? LogTone.Muted :
 
                 LogTone.Normal;
 
-            return LogEntry.Corrida(linha, tom);
-        });
+            // As linhas de abertura e de resultado sao do arquivo inteiro, e nao
+            // de uma etapa: a coluna fica vazia nelas de proposito.
+            var daLinha = linha.StartsWith("===", StringComparison.Ordinal) ? "" : etapa;
+
+            yield return new LogEntry(hora, "", daLinha, linha, tom);
+        }
+    }
 
     // --------------------------------------------------------------- utilidades
 

@@ -164,9 +164,14 @@ internal sealed class LogView : ListBox, IPaintsItself
 
         var (rotulo, mensagem) = Cores(linha.Tom);
 
+        // Quando nao ha coluna de nivel — o log de build nao tem —, quem carrega
+        // a cor do estado e a etapa. Assim toda linha de erro tem um rotulo
+        // colorido, e nao so a mensagem.
+        var corDaEtapa = linha.Nivel.Length == 0 ? rotulo : Theme.TextMuted;
+
         Coluna(g, e.Bounds, linha.Hora, 1, Theme.TextFaint);
         Coluna(g, e.Bounds, linha.Nivel, ColunaNivel, rotulo);
-        Coluna(g, e.Bounds, linha.Categoria, ColunaCategoria, Theme.TextMuted);
+        Coluna(g, e.Bounds, linha.Categoria, ColunaCategoria, corDaEtapa);
 
         var recuo = linha.Hora.Length == 0 ? 1 : ColunaMensagem;
         Coluna(g, e.Bounds, linha.Mensagem, recuo, mensagem);
