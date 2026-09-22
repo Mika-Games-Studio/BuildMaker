@@ -70,6 +70,59 @@ public class ProjectViewTests : IDisposable
         Assert.Equal("2022.3.62f3", projeto.Unity?.EditorVersion);
     }
 
+    /// <summary>
+    /// A divergencia e dita na propria linha, e nao so na ajuda de baixo.
+    ///
+    /// Acontece quando o time sobe o projeto de versao e a configuracao fica
+    /// para tras: a build passa a rodar num editor que nao e o do projeto, e o
+    /// erro aparece la na frente, longe daqui.
+    /// </summary>
+    [Fact]
+    public void Versao_do_disco_diferente_da_gravada_aparece_como_divergencia()
+    {
+        var projeto = new ProjectOptions
+        {
+            Name = "Jogo",
+            Unity = new UnityOptions { EditorVersion = "6000.0.32f1" },
+            Repository = new RepositoryOptions { WorkspacePath = CriarProjetoUnity("6000.0.47f1") },
+        };
+
+        var view = new ProjectView(projeto);
+
+        Assert.Contains("6000.0.47f1", view.DetectedEditorVersion, StringComparison.Ordinal);
+        Assert.Contains("diverge", view.DetectedEditorVersion, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Versoes_iguais_nao_acusam_divergencia()
+    {
+        var projeto = new ProjectOptions
+        {
+            Name = "Jogo",
+            Unity = new UnityOptions { EditorVersion = "6000.0.47f1" },
+            Repository = new RepositoryOptions { WorkspacePath = CriarProjetoUnity("6000.0.47f1") },
+        };
+
+        Assert.Equal("6000.0.47f1", new ProjectView(projeto).DetectedEditorVersion);
+    }
+
+    /// <summary>
+    /// Campo vazio herda de Defaults de proposito: acusar divergencia ali seria
+    /// chamar de erro o uso normal.
+    /// </summary>
+    [Fact]
+    public void Versao_em_branco_herda_de_defaults_e_nao_diverge()
+    {
+        var projeto = new ProjectOptions
+        {
+            Name = "Jogo",
+            Repository = new RepositoryOptions { WorkspacePath = CriarProjetoUnity("6000.0.47f1") },
+        };
+
+        Assert.DoesNotContain("diverge", new ProjectView(projeto).DetectedEditorVersion,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
     [Fact]
     public void Workspace_inexistente_nao_inventa_versao()
     {

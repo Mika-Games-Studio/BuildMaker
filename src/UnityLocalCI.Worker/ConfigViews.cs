@@ -374,7 +374,30 @@ public sealed class ProjectView
     [Description("O que o ProjectVersion.txt do workspace diz agora. Se divergir do campo acima, a configuração está desatualizada.")]
     [ReadOnly(true)]
     public string DetectedEditorVersion
-        => Detect(_repository.WorkspacePath) ?? "(workspace ainda não clonado)";
+    {
+        get
+        {
+            var noDisco = Detect(_repository.WorkspacePath);
+            if (noDisco is null) return "(workspace ainda não clonado)";
+
+            // A divergencia e dita na propria linha, e nao so na ajuda de baixo:
+            // ninguem le a ajuda de um campo que parece estar certo, e uma build
+            // numa versao de editor que o time ja abandonou falha longe daqui.
+            return Diverge(noDisco) ? noDisco + "  —  diverge do gravado acima" : noDisco;
+        }
+    }
+
+    /// <summary>
+    /// A versao gravada e a do disco discordam. Campo vazio nao diverge: ele
+    /// herda de Defaults de proposito.
+    /// </summary>
+    private bool Diverge(string noDisco)
+    {
+        var gravada = _project.Unity?.EditorVersion;
+
+        return !string.IsNullOrWhiteSpace(gravada)
+               && !string.Equals(gravada.Trim(), noDisco, StringComparison.OrdinalIgnoreCase);
+    }
 
     [Category("Unity")]
     [Description("Plataforma do build. Vazio herda de Defaults, que vem como WebGL.")]
