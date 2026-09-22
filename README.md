@@ -1,4 +1,6 @@
-# UnityLocalCI
+# BuildMaker
+
+> O programa se chama **BuildMaker** na tela, com "Unity Local CI" como descritor. No código nada mudou: o namespace continua `UnityLocalCI.App`, o executável `UnityLocalCI.exe`, o serviço do Windows `UnityLocalCI` e a credencial `UnityLocalCI_GitHub` — renomear qualquer um deles quebraria as instalações que já existem.
 
 Serviço de integração contínua que roda inteiramente numa máquina Windows local. Observa a branch de homologação de um ou mais projetos Unity, detecta commits novos, executa o build, compacta o resultado e copia o zip para a pasta de cada projeto.
 

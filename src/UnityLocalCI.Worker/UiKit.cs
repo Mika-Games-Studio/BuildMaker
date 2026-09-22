@@ -24,6 +24,30 @@ internal static class UiKit
 
     public static void Text(Graphics g, string text, Font font, Rectangle bounds, Color color, TextFormatFlags flags)
         => TextRenderer.DrawText(g, text, font, bounds, color, flags);
+
+    private const TextFormatFlags Colado =
+        TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix |
+        TextFormatFlags.NoPadding;
+
+    /// <summary>
+    /// A assinatura: duas palavras em pesos diferentes que precisam parecer uma
+    /// so. Medidas sem folga lateral de proposito — o <see cref="TextRenderer"/>
+    /// reserva alguns pixels em cada ponta por padrao, e com eles a emenda entre
+    /// 'Build' e 'Maker' abre e denuncia que sao dois desenhos.
+    /// </summary>
+    public static void WordMark(Graphics g, Rectangle bounds, string forte, string fraco,
+        Color corForte, Color corFraca)
+    {
+        var largura = TextRenderer
+            .MeasureText(g, forte, Theme.Mark, new Size(int.MaxValue, bounds.Height), Colado)
+            .Width;
+
+        TextRenderer.DrawText(g, forte, Theme.Mark, bounds, corForte, Colado);
+
+        TextRenderer.DrawText(g, fraco, Theme.MarkSoft,
+            new Rectangle(bounds.X + largura, bounds.Y, Math.Max(0, bounds.Width - largura), bounds.Height),
+            corFraca, Colado);
+    }
 }
 
 // ---------------------------------------------------------------------- cartao
@@ -241,10 +265,16 @@ internal sealed class NavRail : Panel, IPaintsItself
 
     public event Action<int>? SelectionChanged;
 
+    /// <summary>A metade em peso cheio da assinatura.</summary>
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-    public string HeaderTitle { get; init; } = "UnityLocalCI";
+    public string HeaderTitle { get; init; } = "Build";
+
+    /// <summary>A metade em peso normal, colada na anterior.</summary>
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-    public string HeaderSubtitle { get; init; } = "CI local";
+    public string HeaderTitleTail { get; init; } = "Maker";
+
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public string HeaderSubtitle { get; init; } = "Unity Local CI";
 
     /// <summary>Marca do programa desenhada no topo — a mesma da bandeja.</summary>
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
@@ -298,16 +328,16 @@ internal sealed class NavRail : Panel, IPaintsItself
         if (HeaderMark is not null)
         {
             g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-            g.DrawImage(HeaderMark, new Rectangle(14, 18, 24, 24));
-            textoX = 46;
+            g.DrawImage(HeaderMark, new Rectangle(14, 16, 26, 26));
+            textoX = 48;
         }
 
         // Altura folgada de proposito: com o retangulo justo, o Windows corta a
-        // perna do 'y' de Unity.
-        UiKit.Text(g, HeaderTitle, Theme.UiBold, new Rectangle(textoX, 14, Width - textoX - 10, 18),
-            Theme.Text, UiKit.LeftMiddle);
+        // perna do 'y'.
+        UiKit.WordMark(g, new Rectangle(textoX, 14, Width - textoX - 10, 18),
+            HeaderTitle, HeaderTitleTail, Theme.Text, Theme.TextMuted);
 
-        UiKit.Text(g, HeaderSubtitle, Theme.UiSmall, new Rectangle(textoX, 32, Width - textoX - 10, 16),
+        UiKit.Text(g, HeaderSubtitle, Theme.UiSmall, new Rectangle(textoX, 33, Width - textoX - 10, 16),
             Theme.TextFaint, UiKit.LeftMiddle);
     }
 }
@@ -354,7 +384,7 @@ internal sealed class NavItem : Control, IPaintsItself
         if (_selected) Theme.FillRounded(g, bounds, Theme.AccentSoft, 8f);
         else if (_hover) Theme.FillRounded(g, bounds, Theme.Blend(Theme.Rail, Theme.Text, 0.06), 8f);
 
-        var cor = _selected ? Theme.Accent : _hover ? Theme.Text : Theme.TextMuted;
+        var cor = _selected ? Theme.AccentText : _hover ? Theme.Text : Theme.TextMuted;
 
         DrawGlyph(g, new Rectangle(12, bounds.Y + (bounds.Height - 16) / 2, 16, 16), cor);
 

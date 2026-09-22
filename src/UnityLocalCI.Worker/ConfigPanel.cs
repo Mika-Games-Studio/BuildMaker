@@ -414,7 +414,7 @@ public sealed class ConfigPanel : UserControl
             Environment.NewLine + Environment.NewLine +
             "O token continua guardado no cofre do Windows; para removê-lo de vez, use o Gerenciador de " +
             "Credenciais do Windows.",
-            "UnityLocalCI", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+            AppNames.Display, MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
 
         if (resposta != DialogResult.Yes) return;
 
@@ -711,7 +711,7 @@ public sealed class ConfigPanel : UserControl
                 : "") +
             Environment.NewLine + Environment.NewLine +
             "A foto e o @ da conta aparecem na aba em instantes. Falta salvar para valer.",
-            "UnityLocalCI", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            AppNames.Display, MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 
     private ProjectOptions? SelectedProject()
@@ -772,7 +772,7 @@ public sealed class ConfigPanel : UserControl
                 "Essa pasta não tem ProjectSettings\\ProjectVersion.txt nem um repositório Git." +
                 Environment.NewLine + Environment.NewLine +
                 "Escolha a pasta raiz do projeto Unity, ou use 'Vazio' para preencher tudo à mão.",
-                "UnityLocalCI", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                AppNames.Display, MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
 
@@ -798,7 +798,7 @@ public sealed class ConfigPanel : UserControl
             "O CI não constrói dentro da pasta que você escolheu: ele clona no workspace acima." +
             Environment.NewLine + Environment.NewLine +
             "Falta escolher a pasta de destino (ArtifactFolder) e marcar Enabled como True. Depois, Salvar e reiniciar.",
-            "UnityLocalCI", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            AppNames.Display, MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 
     /// <summary>
@@ -820,7 +820,7 @@ public sealed class ConfigPanel : UserControl
         {
             MessageBox.Show(
                 this, $"Já existe um projeto chamado '{nome}'.",
-                "UnityLocalCI", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                AppNames.Display, MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
 
@@ -845,7 +845,7 @@ public sealed class ConfigPanel : UserControl
         var nome = _options.Projects[index].Name;
         var resposta = MessageBox.Show(
             this, $"Remover o projeto '{nome}' da configuracao?\n\nIsto nao apaga workspace, artefatos nem historico.",
-            "UnityLocalCI", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+            AppNames.Display, MessageBoxButtons.YesNo, MessageBoxIcon.Question);
 
         if (resposta != DialogResult.Yes) return;
 

@@ -35,25 +35,13 @@ public static class AppIcon
         return stream is null ? SystemIcons.Application : new Icon(stream, size);
     }
 
-    private static Bitmap? _mark;
-
     /// <summary>
-    /// A marca desenhada no topo da coluna de navegacao. Vem do quadro de 32
-    /// pixels e nao do de 16: reduzir um desenho grande sai limpo, ampliar um
-    /// pequeno sai serrilhado.
+    /// A marca desenhada no topo da coluna de navegacao.
+    ///
+    /// Vem do <see cref="BrandMark"/> e nao do .ico: o icone traz o azulejo
+    /// preto de fundo, que sobre a coluna apareceria como um quadrado escuro em
+    /// volta da marca. Aqui a junta entre os blocos e pintada com a cor da
+    /// propria coluna, e o cubo flutua sem moldura.
     /// </summary>
-    public static Image LoadMark()
-    {
-        if (_mark is not null) return _mark;
-
-        using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(ResourceName);
-
-        // SystemIcons.Application e compartilhado pelo processo inteiro: usar,
-        // sim; descartar, nunca.
-        var icon = stream is null ? SystemIcons.Application : new Icon(stream, 32, 32);
-        _mark = icon.ToBitmap();
-        if (stream is not null) icon.Dispose();
-
-        return _mark;
-    }
+    public static Image LoadMark() => BrandMark.ParaNavegacao();
 }

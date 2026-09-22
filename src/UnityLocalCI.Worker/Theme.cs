@@ -13,16 +13,20 @@ internal interface IPaintsItself;
 /// <summary>
 /// Tema da janela.
 ///
-/// As duas cores da marca sao o verde #6FAB16 e o quase-preto #131A09. Elas
-/// tem o mesmo matiz — 84 graus, amarelo-esverdeado —, entao a escala de
-/// fundos sai de uma so familia: fundo, superficie e superficie elevada, em
+/// As duas cores da marca sao o verde #6FAB16 e o preto. O verde esta em 84
+/// graus de matiz, e os neutros sao o mesmo matiz com a saturacao quase toda
+/// tirada: fundo, superficie e superficie elevada saem de uma familia so, em
 /// vez de um cinza unico. E isso que da profundidade sem sombra, e o que
 /// impede a tela de parecer chapada. O destaque e um so, o verde, usado com
 /// parcimonia: se tudo destaca, nada destaca.
 ///
 /// O verde e claro demais para carregar texto branco — da 2,7:1, reprovado em
-/// qualquer leitura. Por isso o que se escreve em cima dele e o quase-preto,
-/// em <see cref="OnAccent"/>, que da 7,7:1.
+/// qualquer leitura. Por isso o que se escreve em cima dele e o preto, em
+/// <see cref="OnAccent"/>, que da 7,5:1.
+///
+/// O contrario tambem vale: o verde 500 sobre o fundo preto fica em 4,4:1, no
+/// limite para texto pequeno. Quando o verde e a tinta, e nao o preenchimento,
+/// quem entra e o 400 de <see cref="AccentText"/>, que passa de 8:1.
 ///
 /// O WinForms nao tem tema. Cada controle pinta com as cores do sistema, entao
 /// tudo aqui e aplicado controle a controle, e os que o sistema insiste em
@@ -33,45 +37,62 @@ public static class Theme
 {
     // --------------------------------------------------------------- paleta
 
-    /// <summary>Fundo da janela, atras de tudo. E a cor da marca, sem diluicao.</summary>
-    public static readonly Color Canvas = Rgb(0x131A09);
+    /// <summary>Fundo da janela, atras de tudo. Preto, e nao um cinza escuro.</summary>
+    public static readonly Color Canvas = Rgb(0x000000);
 
     /// <summary>Coluna de navegacao: um degrau abaixo do conteudo.</summary>
-    public static readonly Color Rail = Rgb(0x19210D);
+    public static readonly Color Rail = Rgb(0x0A0D05);
 
     /// <summary>Cartoes, grades, caixas de texto.</summary>
-    public static readonly Color Surface = Rgb(0x1F2A11);
+    public static readonly Color Surface = Rgb(0x12160A);
 
     /// <summary>Cabecalhos de coluna, botoes, estado de hover.</summary>
-    public static readonly Color SurfaceHigh = Rgb(0x2A3818);
+    public static readonly Color SurfaceHigh = Rgb(0x1B2410);
 
-    public static readonly Color Border = Rgb(0x3C4B26);
-    public static readonly Color BorderSoft = Rgb(0x293419);
+    public static readonly Color Border = Rgb(0x2E3A1A);
+    public static readonly Color BorderSoft = Rgb(0x1B2410);
 
     /// <summary>
     /// Branco levemente esverdeado, e nao puro: texto branco sobre fundo
     /// colorido vibra na borda, e o olho paga por isso numa tela aberta o dia
     /// inteiro.
     /// </summary>
-    public static readonly Color Text = Rgb(0xE9EEE1);
+    public static readonly Color Text = Rgb(0xE9EFDD);
 
-    public static readonly Color TextMuted = Rgb(0x9FAA92);
-    public static readonly Color TextFaint = Rgb(0x6F7A62);
+    public static readonly Color TextMuted = Rgb(0xA9B594);
+    public static readonly Color TextFaint = Rgb(0x7C8A68);
 
-    /// <summary>O verde da marca. Um unico destaque em toda a interface.</summary>
+    /// <summary>
+    /// O verde da marca, o 500 da escala. Um unico destaque em toda a
+    /// interface, e sempre como preenchimento: botao primario, bolinha de
+    /// estado, marca.
+    /// </summary>
     public static readonly Color Accent = Rgb(0x6FAB16);
 
-    public static readonly Color AccentHover = Rgb(0x82C11F);
-    public static readonly Color AccentPressed = Rgb(0x588B10);
+    public static readonly Color AccentHover = Rgb(0x89CE22);
+    public static readonly Color AccentPressed = Rgb(0x5B8D11);
+
+    /// <summary>
+    /// O verde quando ele e tinta e nao preenchimento: item ativo da navegacao,
+    /// codigo do device flow, build em execucao. E o 400 da escala, porque o
+    /// 500 sobre o preto fica em 4,4:1 e este passa de 8:1.
+    /// </summary>
+    public static readonly Color AccentText = Rgb(0x89CE22);
 
     /// <summary>
     /// O que se escreve em cima do verde. Claro demais para texto branco: o
-    /// quase-preto da marca e o que passa em contraste.
+    /// preto da marca e o que passa em contraste.
     /// </summary>
-    public static readonly Color OnAccent = Rgb(0x101705);
+    public static readonly Color OnAccent = Rgb(0x000000);
 
     /// <summary>Verde diluido no fundo: selecao e item ativo, sem berrar.</summary>
-    public static readonly Color AccentSoft = Rgb(0x27350F);
+    public static readonly Color AccentSoft = Rgb(0x1D280B);
+
+    /// <summary>
+    /// O verde 800, so para as duas faces expostas dentro do encaixe da marca.
+    /// E o que da profundidade ao vao sem gradiente nenhum.
+    /// </summary>
+    public static readonly Color AccentDeep = Rgb(0x324E09);
 
     /// <summary>
     /// Os estados de build, claros e nao escuros: no fundo escuro o tom fechado
@@ -81,11 +102,11 @@ public static class Theme
     /// fossem o mesmo, "terminou bem" e "este e o botao principal" falariam com
     /// a mesma voz, e uma tela cheia de linhas verdes nao diria mais nada.
     /// </summary>
-    public static readonly Color Success = Rgb(0x5FC9A2);
+    public static readonly Color Success = Rgb(0x3FB58E);
 
-    public static readonly Color Danger = Rgb(0xE8836F);
-    public static readonly Color Warning = Rgb(0xE5B94F);
-    public static readonly Color Info = Rgb(0x7EA6C9);
+    public static readonly Color Danger = Rgb(0xE2593C);
+    public static readonly Color Warning = Rgb(0xE0A21C);
+    public static readonly Color Info = Rgb(0x62A8C4);
 
     // ------------------------------------------------- compatibilidade de nome
 
@@ -109,6 +130,16 @@ public static class Theme
     public static readonly Font UiSmallBold = new(UiFamily, 8.25f, FontStyle.Bold);
     public static readonly Font Title = new(UiFamily, 14f, FontStyle.Bold);
     public static readonly Font Mono = new(MonoFamily, 9f);
+
+    /// <summary>
+    /// A assinatura no topo da coluna: 'Build' em peso cheio, 'Maker' em peso
+    /// normal, os dois no mesmo corpo. Um degrau acima do texto corrente, sem
+    /// chegar ao tamanho de titulo de pagina — quem manda na tela e o titulo
+    /// da pagina, nao o nome do programa.
+    /// </summary>
+    public static readonly Font Mark = new(UiFamily, 11f, FontStyle.Bold);
+
+    public static readonly Font MarkSoft = new(UiFamily, 11f);
 
     private static string FirstInstalled(params string[] candidates)
     {
@@ -325,7 +356,7 @@ public static class Theme
         grid.ViewForeColor = Text;
         grid.ViewBorderColor = BorderSoft;
         grid.LineColor = BorderSoft;
-        grid.CategoryForeColor = Accent;
+        grid.CategoryForeColor = AccentText;
         grid.CategorySplitterColor = BorderSoft;
         grid.HelpBackColor = SurfaceHigh;
         grid.HelpForeColor = TextMuted;

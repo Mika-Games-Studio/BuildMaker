@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using UnityLocalCI.Core.Configuration;
 using UnityLocalCI.Core.Hosting;
+using UnityLocalCI.Core.Pipeline;
 using UnityLocalCI.Core.Publishing;
 using UnityLocalCI.Core.Queue;
 using UnityLocalCI.Core.State;
@@ -66,7 +67,7 @@ public sealed class MainForm : Form
         _configPath = configPath;
         _configPanel = new ConfigPanel(configPath, controller);
 
-        Text = "UnityLocalCI";
+        Text = AppNames.Display;
         Icon = AppIcon.Load();
         Width = 1180;
         Height = 740;
@@ -133,7 +134,15 @@ public sealed class MainForm : Form
         };
         conteudo.Controls.Add(_pageHost);
 
-        var rail = new NavRail { Dock = DockStyle.Left, HeaderMark = AppIcon.LoadMark() };
+        var rail = new NavRail
+        {
+            Dock = DockStyle.Left,
+            HeaderMark = AppIcon.LoadMark(),
+            HeaderTitle = AppNames.MarkStrong,
+            HeaderTitleTail = AppNames.MarkSoft,
+            HeaderSubtitle = AppNames.Descriptor,
+        };
+
         rail.AddItem("Projetos", NavGlyph.Projects);
         rail.AddItem("Builds", NavGlyph.Builds);
         rail.AddItem("Log do serviço", NavGlyph.Log);
@@ -190,7 +199,10 @@ public sealed class MainForm : Form
             TextColumn("Estado", 110),
             TextColumn("Última build", 130),
             TextColumn("Commit", 90),
-            TextColumn("Duração", 90),
+
+            // Mais larga que a da pagina de builds: enquanto a build corre esta
+            // coluna carrega a etapa junto com o tempo.
+            TextColumn("Duração", 150),
             TextColumn("Artefato", 300));
 
         StretchLastColumn(_projectsGrid);
@@ -310,6 +322,7 @@ public sealed class MainForm : Form
         {
             var store = services.GetRequiredService<IBuildStore>();
             var options = services.GetRequiredService<Microsoft.Extensions.Options.IOptions<CiOptions>>().Value;
+            var progresso = services.GetRequiredService<BuildProgress>();
             var projects = ProjectResolver.ResolveEnabled(options);
 
             var rows = new List<string[]>();
@@ -328,7 +341,11 @@ public sealed class MainForm : Form
                 var last = recent.FirstOrDefault(b => b.FinishedAt is not null);
 
                 rows.Add(current is not null
-                    ? [project.Name, "EM EXECUÇÃO", Local(current.StartedAt), current.ShortSha, "—", "—"]
+                    ?
+                    [
+                        project.Name, "EM EXECUÇÃO", Local(current.StartedAt), current.ShortSha,
+                        Andamento(progresso, current), "—",
+                    ]
                     : last is null
                         ? [project.Name, "—", "nunca", "—", "—", "—"]
                         :
@@ -411,7 +428,7 @@ public sealed class MainForm : Form
         "SUCESSO" => Theme.Success,
         "FALHOU" => Theme.Danger,
         "INTERROMPIDA" or "CANCELADA" => Theme.Warning,
-        "EM EXECUÇÃO" => Theme.Accent,
+        "EM EXECUÇÃO" => Theme.AccentText,
         "NA FILA" => Theme.Info,
         _ => Theme.TextMuted,
     };
@@ -681,6 +698,24 @@ public sealed class MainForm : Form
     private static string Local(DateTimeOffset? value)
         => value is null ? "—" : value.Value.ToLocalTime().ToString("dd/MM HH:mm");
 
+    /// <summary>
+    /// A coluna de duracao enquanto a build corre: a etapa e ha quanto tempo
+    /// ela comecou.
+    ///
+    /// "EM EXECUCAO" sozinho e igual aos dois minutos e aos vinte, e a duvida
+    /// de quem olha — esta andando ou travou? — nao tem resposta na tela. O
+    /// tempo e contado do StartedAt na hora, sem guardar nada.
+    /// </summary>
+    private static string Andamento(BuildProgress progresso, BuildRecord build)
+    {
+        var corrido = build.StartedAt is { } inicio
+            ? StatusFormatter.FormatDuration((int)(DateTimeOffset.UtcNow - inicio).TotalSeconds)
+            : "—";
+
+        var etapa = progresso.Etapa(build.Id);
+        return etapa is null ? corrido : etapa + " · " + corrido;
+    }
+
     private static string FirstLine(string? text)
     {
         if (string.IsNullOrWhiteSpace(text)) return "";
@@ -689,10 +724,10 @@ public sealed class MainForm : Form
     }
 
     private void Warn(string message)
-        => MessageBox.Show(this, message, "UnityLocalCI", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        => MessageBox.Show(this, message, AppNames.Display, MessageBoxButtons.OK, MessageBoxIcon.Warning);
 
     private void Inform(string message)
-        => MessageBox.Show(this, message, "UnityLocalCI", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        => MessageBox.Show(this, message, AppNames.Display, MessageBoxButtons.OK, MessageBoxIcon.Information);
 
     protected override void OnFormClosing(FormClosingEventArgs e)
     {

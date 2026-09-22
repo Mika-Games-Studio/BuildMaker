@@ -83,6 +83,10 @@ public static class ServiceRegistration
         services.AddScoped<PublishStep>();
         services.AddScoped<IBuildRunner, BuildPipeline>();
 
+        // Singleton e nao scoped: quem escreve e o pipeline, dentro do escopo da
+        // build; quem le e a janela, fora dele.
+        services.AddSingleton<BuildProgress>();
+
         services.AddSingleton<ILatestFolderWriter, LatestFolderWriter>();
         services.AddSingleton<IGlobalStatusWriter, GlobalStatusWriter>();
         services.AddSingleton<IRetentionService, RetentionService>();

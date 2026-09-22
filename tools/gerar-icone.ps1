@@ -1,8 +1,13 @@
 ﻿<#
-    Gera o icone do UnityLocalCI.
+    Gera o icone do BuildMaker.
 
     Roda uma vez so; o .ico resultante e versionado. Esta aqui para o desenho
     poder ser refeito sem depender de ninguem ter um editor de imagem.
+
+    A geometria da marca esta duplicada em src\UnityLocalCI.Worker\BrandMark.cs,
+    que desenha a mesma coisa dentro do aplicativo. Nao da para reaproveitar:
+    este script roda antes de o projeto compilar. Quem mexer numa tabela precisa
+    mexer na outra.
 
     O formato ICO aceita PNG embutido a partir do Vista, entao cada tamanho e
     um PNG completo — bem mais simples que montar bitmaps DIB na mao.
@@ -16,9 +21,70 @@ Add-Type -AssemblyName System.Drawing
 
 $tamanhos = 16, 20, 24, 32, 48, 64, 128, 256
 
-$fundo   = [System.Drawing.Color]::FromArgb(0x6F, 0xAB, 0x16)  # verde da marca
-$marca   = [System.Drawing.Color]::FromArgb(0x13, 0x1A, 0x09)  # quase-preto da marca
-$destaque = [System.Drawing.Color]::FromArgb(0x13, 0x1A, 0x09)  # a base, no mesmo tom
+$fundo   = [System.Drawing.Color]::FromArgb(0x00, 0x00, 0x00)  # azulejo e junta entre os blocos
+$corpo   = [System.Drawing.Color]::FromArgb(0x6F, 0xAB, 0x16)  # verde 500, a cor da marca
+$encaixe = [System.Drawing.Color]::FromArgb(0x32, 0x4E, 0x09)  # verde 800, as faces dentro do vao
+
+<#
+    A marca: um cubo isometrico 2x2x2 de blocos iguais com o bloco de cima a
+    direita faltando, e a peca que falta descendo ate o encaixe.
+
+    Cada linha e um quadrilatero num quadro de 100x100: o 1 na frente marca as
+    duas faces expostas dentro do vao, que vao no verde fechado. A ordem e a de
+    pintura — cada bloco e preenchido e contornado antes do proximo, e e o
+    contorno, na cor do fundo, que abre a junta. Trocar a ordem desmonta o cubo.
+#>
+$marcaCompleta = @(
+    @(0, 39.62, 35.98, 56.36, 45.65, 39.62, 55.32, 22.87, 45.65),
+    @(0, 56.36, 64.99, 39.62, 74.66, 39.62, 55.32, 56.36, 45.65),
+    @(0, 22.87, 64.99, 39.62, 74.66, 39.62, 55.32, 22.87, 45.65),
+    @(0, 39.62, 16.64, 56.36, 26.31, 39.62, 35.98, 22.87, 26.31),
+    @(1, 56.36, 45.65, 39.62, 55.32, 39.62, 35.98, 56.36, 26.31),
+    @(0, 22.87, 45.65, 39.62, 55.32, 39.62, 35.98, 22.87, 26.31),
+    @(0, 22.87, 45.65, 39.62, 55.32, 22.87, 64.99, 6.12, 55.32),
+    @(0, 39.62, 74.66, 22.87, 84.33, 22.87, 64.99, 39.62, 55.32),
+    @(0, 6.12, 74.66, 22.87, 84.33, 22.87, 64.99, 6.12, 55.32),
+    @(1, 56.36, 45.65, 73.11, 55.32, 56.36, 64.99, 39.62, 55.32),
+    @(0, 73.11, 74.66, 56.36, 84.33, 56.36, 64.99, 73.11, 55.32),
+    @(0, 39.62, 74.66, 56.36, 84.33, 56.36, 64.99, 39.62, 55.32),
+    @(0, 22.87, 26.31, 39.62, 35.98, 22.87, 45.65, 6.12, 35.98),
+    @(0, 39.62, 55.32, 22.87, 64.99, 22.87, 45.65, 39.62, 35.98),
+    @(0, 6.12, 55.32, 22.87, 64.99, 22.87, 45.65, 6.12, 35.98),
+    @(0, 39.62, 55.32, 56.36, 64.99, 39.62, 74.66, 22.87, 64.99),
+    @(0, 56.36, 84.33, 39.62, 94.00, 39.62, 74.66, 56.36, 64.99),
+    @(0, 22.87, 84.33, 39.62, 94.00, 39.62, 74.66, 22.87, 64.99),
+    @(0, 39.62, 35.98, 56.36, 45.65, 39.62, 55.32, 22.87, 45.65),
+    @(0, 56.36, 64.99, 39.62, 74.66, 39.62, 55.32, 56.36, 45.65),
+    @(0, 22.87, 64.99, 39.62, 74.66, 39.62, 55.32, 22.87, 45.65),
+    @(0, 77.13, 6.00, 93.88, 15.67, 77.13, 25.34, 60.38, 15.67),
+    @(0, 93.88, 35.01, 77.13, 44.68, 77.13, 25.34, 93.88, 15.67),
+    @(0, 60.38, 35.01, 77.13, 44.68, 77.13, 25.34, 60.38, 15.67)
+)
+
+# So o cubo, maior no quadro e sem a peca solta.
+$marcaCompacta = @(
+    @(0, 50.00, 28.00, 69.05, 39.00, 50.00, 50.00, 30.95, 39.00),
+    @(0, 69.05, 61.00, 50.00, 72.00, 50.00, 50.00, 69.05, 39.00),
+    @(0, 30.95, 61.00, 50.00, 72.00, 50.00, 50.00, 30.95, 39.00),
+    @(0, 50.00, 6.00, 69.05, 17.00, 50.00, 28.00, 30.95, 17.00),
+    @(1, 69.05, 39.00, 50.00, 50.00, 50.00, 28.00, 69.05, 17.00),
+    @(0, 30.95, 39.00, 50.00, 50.00, 50.00, 28.00, 30.95, 17.00),
+    @(0, 30.95, 39.00, 50.00, 50.00, 30.95, 61.00, 11.90, 50.00),
+    @(0, 50.00, 72.00, 30.95, 83.00, 30.95, 61.00, 50.00, 50.00),
+    @(0, 11.90, 72.00, 30.95, 83.00, 30.95, 61.00, 11.90, 50.00),
+    @(1, 69.05, 39.00, 88.10, 50.00, 69.05, 61.00, 50.00, 50.00),
+    @(0, 88.10, 72.00, 69.05, 83.00, 69.05, 61.00, 88.10, 50.00),
+    @(0, 50.00, 72.00, 69.05, 83.00, 69.05, 61.00, 50.00, 50.00),
+    @(0, 30.95, 17.00, 50.00, 28.00, 30.95, 39.00, 11.90, 28.00),
+    @(0, 50.00, 50.00, 30.95, 61.00, 30.95, 39.00, 50.00, 28.00),
+    @(0, 11.90, 50.00, 30.95, 61.00, 30.95, 39.00, 11.90, 28.00),
+    @(0, 50.00, 50.00, 69.05, 61.00, 50.00, 72.00, 30.95, 61.00),
+    @(0, 69.05, 83.00, 50.00, 94.00, 50.00, 72.00, 69.05, 61.00),
+    @(0, 30.95, 83.00, 50.00, 94.00, 50.00, 72.00, 30.95, 61.00),
+    @(0, 50.00, 28.00, 69.05, 39.00, 50.00, 50.00, 30.95, 39.00),
+    @(0, 69.05, 61.00, 50.00, 72.00, 50.00, 50.00, 69.05, 39.00),
+    @(0, 30.95, 61.00, 50.00, 72.00, 50.00, 50.00, 30.95, 39.00)
+)
 
 function Desenhar([int]$s) {
     $bmp = New-Object System.Drawing.Bitmap $s, $s
@@ -40,30 +106,45 @@ function Desenhar([int]$s) {
     $pincel = New-Object System.Drawing.SolidBrush $fundo
     $g.FillPath($pincel, $caminho)
 
-    # Seta para cima: build que sobe, publicacao. Formas cheias e grossas,
-    # porque em 16px qualquer detalhe fino vira borrao.
-    $cx = $s / 2.0
-    $larguraSeta = $s * 0.46
-    $pontos = @(
-        (New-Object System.Drawing.PointF $cx, ($s * 0.20)),
-        (New-Object System.Drawing.PointF ($cx + $larguraSeta / 2), ($s * 0.50)),
-        (New-Object System.Drawing.PointF ($cx + $larguraSeta * 0.18), ($s * 0.50)),
-        (New-Object System.Drawing.PointF ($cx + $larguraSeta * 0.18), ($s * 0.72)),
-        (New-Object System.Drawing.PointF ($cx - $larguraSeta * 0.18), ($s * 0.72)),
-        (New-Object System.Drawing.PointF ($cx - $larguraSeta * 0.18), ($s * 0.50)),
-        (New-Object System.Drawing.PointF ($cx - $larguraSeta / 2), ($s * 0.50))
-    )
-    $pincelMarca = New-Object System.Drawing.SolidBrush $marca
-    $g.FillPolygon($pincelMarca, [System.Drawing.PointF[]]$pontos)
-
-    # Base verde: o "publicado". Some nos tamanhos pequenos de proposito.
+    # O corte e em 32px: acima disso o cubo e a peca solta se distinguem;
+    # abaixo, a peca vira um ponto e as juntas fecham.
     if ($s -ge 32) {
-        $pincelBase = New-Object System.Drawing.SolidBrush $destaque
-        $g.FillRectangle($pincelBase, ($cx - $larguraSeta / 2), ($s * 0.78), $larguraSeta, ($s * 0.08))
-        $pincelBase.Dispose()
+        $blocos = $marcaCompleta
+        $junta = 1.64   # 8,5% da aresta
+    } else {
+        $blocos = $marcaCompacta
+        $junta = 2.86   # 13% da aresta
     }
 
-    $pincel.Dispose(); $pincelMarca.Dispose(); $caminho.Dispose(); $g.Dispose()
+    # A marca nao vai de ponta a ponta: com o canto arredondado em 22% do lado,
+    # o cubo encostado na borda perde os vertices.
+    #
+    # Abaixo de 32px a folga encolhe quase a zero. O desenho compacto ja e mais
+    # estreito no quadro, e cada pixel que sobra e a diferenca entre ler um cubo
+    # e ler um borrao verde: em 16px o bloco tem tres pixels de aresta.
+    $ocupacao = $(if ($s -ge 32) { 0.86 } else { 0.98 })
+    $escala = $s * $ocupacao / 100.0
+    $margem = $s * (1 - $ocupacao) / 2.0
+
+    $caneta = New-Object System.Drawing.Pen $fundo, ([float]($junta * $escala))
+    $caneta.LineJoin = 'Round'
+
+    $pincelCorpo = New-Object System.Drawing.SolidBrush $corpo
+    $pincelEncaixe = New-Object System.Drawing.SolidBrush $encaixe
+
+    foreach ($bloco in $blocos) {
+        $pontos = New-Object 'System.Drawing.PointF[]' 4
+        for ($i = 0; $i -lt 4; $i++) {
+            $pontos[$i] = New-Object System.Drawing.PointF `
+                ([float]($margem + $bloco[1 + $i * 2] * $escala)), ([float]($margem + $bloco[2 + $i * 2] * $escala))
+        }
+
+        $g.FillPolygon($(if ($bloco[0] -eq 1) { $pincelEncaixe } else { $pincelCorpo }), $pontos)
+        $g.DrawPolygon($caneta, $pontos)
+    }
+
+    $pincel.Dispose(); $pincelCorpo.Dispose(); $pincelEncaixe.Dispose()
+    $caneta.Dispose(); $caminho.Dispose(); $g.Dispose()
     return $bmp
 }
 
