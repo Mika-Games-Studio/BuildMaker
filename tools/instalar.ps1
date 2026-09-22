@@ -123,6 +123,15 @@ Passo "Instalando em $Destino"
 
 Get-Process -Name 'UnityLocalCI' -ErrorAction SilentlyContinue | ForEach-Object {
     Aviso "ha uma instancia rodando; encerrando para substituir os arquivos"
+
+    # O Unity roda como filho do servico, num job object: encerrar o servico
+    # mata a build junto. Ela volta como Interrompida e e reenfileirada no
+    # proximo start, mas o Library fica pela metade — e uma build cancelada no
+    # meio da importacao envenena o cache das proximas.
+    if (Get-Process -Name 'Unity' -ErrorAction SilentlyContinue) {
+        Aviso "ha Unity aberto nesta maquina; se for uma build do CI, ela sera interrompida"
+    }
+
     $_.CloseMainWindow() | Out-Null
     Start-Sleep -Milliseconds 1200
     if (-not $_.HasExited) { $_ | Stop-Process -Force }
