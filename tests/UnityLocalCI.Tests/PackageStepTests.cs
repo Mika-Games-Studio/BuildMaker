@@ -9,14 +9,14 @@ using Xunit;
 namespace UnityLocalCI.Tests;
 
 /// <summary>
-/// O conteudo do que e entregue.
+/// O conteudo do zip entregue.
 ///
-/// O zip e a pasta latest\ sao o jogo: e o que vai para o navegador, para a loja
-/// ou para quem pediu a build. Arquivo do CI misturado com os arquivos do jogo
-/// confunde quem recebe, e um portal que valide o pacote rejeita por causa disso.
+/// O zip e o jogo: e o que vai para o navegador, para a loja ou para quem pediu
+/// a build. Arquivo do CI misturado com os arquivos do jogo confunde quem
+/// recebe, e um portal que valide o pacote rejeita por causa disso.
 ///
-/// Como a latest\ e copiada da pasta de saida, a unica forma de manter as duas
-/// limpas e nao escrever nada ali — e e isso que estes testes fixam.
+/// A unica forma de garantir isso e nao escrever nada na pasta de saida — e e
+/// isso que estes testes fixam.
 /// </summary>
 public class PackageStepTests : IDisposable
 {
@@ -88,8 +88,7 @@ public class PackageStepTests : IDisposable
     }
 
     /// <summary>
-    /// Nada e escrito na pasta de saida. Como a latest\ e uma copia dela, este
-    /// e o teste que mantem as duas com so os arquivos do jogo.
+    /// Nada e escrito na pasta de saida — e por isso o zip so tem o jogo.
     /// </summary>
     [Fact]
     public async Task A_pasta_de_saida_fica_como_o_unity_a_deixou()

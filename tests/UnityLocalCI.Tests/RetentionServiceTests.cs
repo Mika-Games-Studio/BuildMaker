@@ -206,16 +206,15 @@ public class RetentionServiceTests : IDisposable
     [Fact]
     public async Task Poda_nao_toca_em_arquivos_que_nao_sao_de_build()
     {
-        // A poda e guiada pelo banco, e nao por varredura da pasta: nada de
-        // _STATUS.txt, latest\ ou zip que alguem copiou para la na mao.
-        await File.WriteAllTextAsync(Path.Combine(_destination, "_STATUS.txt"), "status");
+        // A poda e guiada pelo banco, e nao por varredura da pasta. O CI so
+        // escreve zips ali, mas a pasta e de quem a usa: um zip copiado na mao,
+        // ou a latest\ que versoes anteriores criavam, continuam de pe.
         await File.WriteAllTextAsync(Path.Combine(_destination, "copiado-na-mao.zip"), "zip alheio");
         Directory.CreateDirectory(Path.Combine(_destination, "latest"));
 
         for (var i = 0; i < 12; i++) await SeedAsync();
         await Create().ApplyAsync(Project(keepLastBuilds: 1), default);
 
-        Assert.True(File.Exists(Path.Combine(_destination, "_STATUS.txt")));
         Assert.True(File.Exists(Path.Combine(_destination, "copiado-na-mao.zip")));
         Assert.True(Directory.Exists(Path.Combine(_destination, "latest")));
     }

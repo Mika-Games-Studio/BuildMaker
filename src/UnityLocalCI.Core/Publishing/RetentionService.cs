@@ -15,7 +15,7 @@ public interface IRetentionService
 ///
 /// A poda e guiada pelo banco, e nao por uma varredura da pasta: apagamos
 /// exatamente os arquivos que cada build registrou, e nunca um zip que alguem
-/// copiou para la na mao, ou a pasta latest\.
+/// copiou para la na mao.
 /// </summary>
 public sealed class RetentionService : IRetentionService
 {

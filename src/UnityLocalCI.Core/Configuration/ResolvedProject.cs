@@ -29,7 +29,6 @@ public sealed record ResolvedPackaging(string NamePattern);
 public sealed record ResolvedPublishing(
     string StagingFolder,
     string ArtifactFolder,
-    bool MaintainLatestFolder,
     bool WriteStatusFiles);
 
 public sealed record ResolvedRetention(int KeepLastBuilds, int MinFreeDiskGb);

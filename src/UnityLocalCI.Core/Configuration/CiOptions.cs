@@ -139,7 +139,6 @@ public sealed class PublishingOptions
 {
     public string? StagingFolder { get; set; }
     public string? ArtifactFolder { get; set; }
-    public bool? MaintainLatestFolder { get; set; }
     public bool? WriteStatusFiles { get; set; }
 }
 

@@ -40,9 +40,11 @@ powershell -ExecutionPolicy Bypass -File tools\instalar.ps1 -DeUrl https://.../U
 
 Instala em `%LOCALAPPDATA%\UnityLocalCI`, cria atalho no menu Iniciar e na área de trabalho, e registra o programa em **Configurações → Aplicativos** — é de lá que ele aparece na busca do Windows e pode ser desinstalado. Uma reinstalação por cima preserva o `appsettings.json` e os projetos cadastrados.
 
-**Rode como administrador**, e só por causa do início automático. O programa pede elevação ao abrir (ver [Por que o programa pede elevação](#por-que-o-programa-pede-elevação)), e o Windows não inicia programa elevado pela chave `Run` — então o início automático virou uma tarefa agendada com privilégio mais alto, que só o administrador pode criar. Sem elevação, todo o resto é instalado normalmente e só o início automático fica de fora, com aviso.
+**Não pede administrador**, e o programa também não: ele roda com o privilégio de quem o abriu, sem UAC. O início automático usa a chave `Run` do usuário, que é a que aparece na aba **Inicializar** do Gerenciador de Tarefas — onde se desliga com um clique.
 
 O instalador **não abre o programa no final**. Abra pelo atalho.
+
+No Windows ele se chama **BuildMaker** — no atalho, na busca, no Gerenciador de Tarefas e em Aplicativos. O arquivo continua `UnityLocalCI.exe`: o nome do executável, o do serviço e o da credencial são identidade, não rótulo, e renomeá-los quebraria as instalações que já existem. O nome exibido vem da informação de versão do binário.
 
 ### 3. Conectar ao GitHub e ativar a licença
 
@@ -112,15 +114,7 @@ powershell -ExecutionPolicy Bypass -File tools\instalar.ps1 -Desinstalar
 
 Ou por **Configurações → Aplicativos → BuildMaker → Desinstalar**, que chama o mesmo script.
 
-Remove arquivos, atalhos, o registro em Aplicativos e o início automático — este último precisa de administrador, como na instalação. **Não** apaga o histórico em `%LOCALAPPDATA%\BuildMaker` nem os artefatos das builds.
-
-### Por que o programa pede elevação
-
-Sem elevação, o Behavior Monitoring do Apex One trata este executável como programa recém-encontrado — sem assinatura de fornecedor, prevalência 1 na máquina — e bloqueia a execução com um diálogo. Elevado, ele passa.
-
-Nada disso engana o antivírus: o executável é o mesmo, no mesmo lugar, com o mesmo hash, e quem autoriza é o usuário no diálogo do próprio Windows. O que muda é o nível de privilégio declarado no manifesto — e declarar que um programa precisa de privilégio é o oposto de esconder o que ele é.
-
-O custo é real: o UAC aparece a cada abertura manual, e as builds do Unity passam a rodar elevadas. Aberto pela tarefa agendada, no logon, ele sobe elevado sem diálogo nenhum.
+Remove arquivos, atalhos, o registro em Aplicativos e o início automático. **Não** apaga o histórico em `%LOCALAPPDATA%\BuildMaker` nem os artefatos das builds.
 
 ---
 
@@ -428,7 +422,6 @@ dotnet test
 | `Builder.cs` em `unity/`, com instruções de instalação | **pronto** |
 | Contrato de log entre o `Builder.cs` e o pipeline | **pronto** |
 | Status e histórico em JSON, em `%LOCALAPPDATA%\BuildMaker\status\` | **pronto** |
-| Pasta `latest\` trocada por rename de diretório | **pronto** |
 | Gatilho manual por arquivo observado | **pronto** |
 | Retenção por contagem | **pronto** |
 
@@ -438,7 +431,7 @@ O `Builder.cs` vem primeiro porque é ele que faz o Unity retornar código difer
 
 ### Onde ficam os dados
 
-A pasta de destino de cada projeto contém **só os zips** e a pasta `latest\`. Nada mais: ela é o que o time abre para pegar a build, e arquivo de CI no meio dos entregáveis confunde quem recebe.
+A pasta de destino de cada projeto contém **só os zips das builds**. Nada mais: ela é o que o time abre para pegar a build, e qualquer outra coisa ali confunde quem recebe.
 
 O que é do próprio aplicativo vive onde o Windows espera:
 
@@ -458,13 +451,13 @@ O formato é JSON, e não texto alinhado a coluna, porque o leitor mudou. Quem q
 
 Isso é uma troca, e vale dizer qual. O log em arquivo foi o que permitiu provar, quando o aplicativo fechava sozinho no meio das builds, que quem o encerrava era o antivírus e não ele próprio — sem arquivo, um processo morto não deixa rastro nenhum. Se voltar a acontecer, o caminho passa a ser o Visualizador de Eventos do Windows e o log do agente de segurança.
 
-A pasta `latest\` é a build mais recente já descompactada, com exatamente os arquivos que o Unity produziu. A troca é feita por rename de diretório — a build nova é copiada inteira para `latest.new\` e só então assume o nome —, porque copiar por cima deixaria a pasta em estado parcial por vários segundos, e quem a abrisse nesse intervalo pegaria uma build quebrada sem nenhum sinal disso.
+Já houve uma pasta `latest\` ali, com a última build já descompactada e pronta para rodar. Ela saiu junto com o resto: a pasta de destino tem os zips, e só. Quem quer a build pega o zip.
 
 ### Por que o duplo clique no `index.html` não serve
 
-Uma build WebGL não roda por `file://`: o navegador bloqueia `.wasm` e `.data` nesse protocolo, e o resultado é uma tela preta sem mensagem de erro. Com compressão, ainda falta o cabeçalho `Content-Encoding`. Para abrir a `latest` ou um zip descompactado, aponte um servidor estático para a pasta — `python -m http.server` ou `npx serve` resolvem, e para uma build com Brotli é preciso um que envie `Content-Encoding` para `.br` e `.gz`.
+Uma build WebGL não roda por `file://`: o navegador bloqueia `.wasm` e `.data` nesse protocolo, e o resultado é uma tela preta sem mensagem de erro. Com compressão, ainda falta o cabeçalho `Content-Encoding`. Descompacte o zip e aponte um servidor estático para a pasta — `python -m http.server` ou `npx serve` resolvem, e para uma build com Brotli é preciso um que envie `Content-Encoding` para `.br` e `.gz`.
 
-> O CI já escreveu um `rodar.bat` dentro de cada build, que subia esse servidor sozinho. Ele saiu: o zip e a `latest` são o jogo, e arquivo do CI misturado aos arquivos do jogo confunde quem recebe o pacote e derruba a validação de um portal. A conveniência não pagava o preço.
+> O CI já escreveu um `rodar.bat` dentro de cada build, que subia esse servidor sozinho. Ele saiu: o zip é o jogo, e arquivo do CI misturado aos arquivos do jogo confunde quem recebe o pacote e derruba a validação de um portal. A conveniência não pagava o preço.
 
 ### Construir agora, sem esperar o merge
 
@@ -498,7 +491,7 @@ Três detalhes que a implementação garante:
 
 - **Contam-se as bem-sucedidas.** Uma sequência de falhas não empurra para fora o último artefato que de fato funciona.
 - **Cópia pendente nunca perde o staging.** Se o destino estava fora do ar, aquele zip só existe ali.
-- **A poda é guiada pelo banco, não por varredura da pasta.** Ela apaga exatamente os arquivos que cada build registrou, e nunca a pasta `latest\` nem um zip que alguém copiou para lá na mão.
+- **A poda é guiada pelo banco, não por varredura da pasta.** Ela apaga exatamente os arquivos que cada build registrou, e nunca um zip que alguém copiou para lá na mão.
 
 A retenção também roda quando um job está adiado por falta de disco. Sem isso ele esperaria para sempre: a poda só acontece ao fim de uma build, e nenhuma ia começar.
 
@@ -575,7 +568,7 @@ powershell -ExecutionPolicy Bypass -File tools\install-service.ps1 -Conta "DOMIN
 
 > **Duas armadilhas de conta de serviço.** O Credential Manager é **por usuário**: os segredos precisam ser gravados logado como a conta que executa o serviço, senão ele sobe e não encontra nada. E o .NET instalado no perfil de um usuário (`%USERPROFILE%\.dotnet`) não é visto por outra conta — instale-o para a máquina inteira, ou defina `DOTNET_ROOT` no ambiente do serviço. O `install-service.ps1` avisa sobre as duas.
 
-> Os demais campos de configuração da fase 2 (`MaintainLatestFolder`, `WriteStatusFiles`, `Retention`, `ManualTriggerFile`, `GlobalStatusFile`) já existem e são validados, mas ainda não têm efeito.
+> Os demais campos de configuração da fase 2 (`WriteStatusFiles`, `Retention`, `ManualTriggerFile`, `GlobalStatusFile`) já existem e são validados, mas ainda não têm efeito.
 
 ### Fase 3 — operação (concluída)
 

@@ -11,12 +11,11 @@ namespace UnityLocalCI.Core.Pipeline;
 /// Nada e acrescentado a saida do Unity. Esta etapa ja escreveu ali um
 /// manifest.json e um rodar.bat que subia um servidor estatico — a build WebGL
 /// nao abre por file://, e o launcher resolvia isso para quem so queria testar.
-/// Os dois sairam: o zip e a pasta latest\ sao o jogo, e arquivo de CI no meio
-/// dos arquivos do jogo confunde quem recebe e derruba a validacao de um portal.
+/// Os dois sairam: o zip e o jogo, e arquivo de CI no meio dos arquivos do jogo
+/// confunde quem recebe e derruba a validacao de um portal.
 ///
 /// O que o manifest dizia nao se perdeu — commit, autor, duracao e tamanho
-/// estao no status em JSON, em %LOCALAPPDATA%\BuildMaker\status. O que se perdeu
-/// e poder abrir a latest\ com um duplo clique; agora ela precisa de um servidor.
+/// estao no status em JSON, em %LOCALAPPDATA%\BuildMaker\status.
 /// </summary>
 public sealed class PackageStep : IBuildStep
 {

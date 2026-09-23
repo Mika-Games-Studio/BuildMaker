@@ -149,7 +149,7 @@ public static class TestProjects
             Watcher: new ResolvedWatcher(pollSeconds, debounceSeconds, 8081),
             Unity: new ResolvedUnity("6000.0.47f1", "WebGL", "Builder.PerformBuild", 90, Array.Empty<string>()),
             Packaging: new ResolvedPackaging("{project}-{branch}-{date}-{sha}.zip"),
-            Publishing: new ResolvedPublishing(staging, artifactFolder, true, true),
+            Publishing: new ResolvedPublishing(staging, artifactFolder, true),
             Retention: new ResolvedRetention(10, minFreeDiskGb));
 }
 

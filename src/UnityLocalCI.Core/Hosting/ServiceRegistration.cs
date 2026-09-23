@@ -88,7 +88,6 @@ public static class ServiceRegistration
         // build; quem le e a janela, fora dele.
         services.AddSingleton<BuildProgress>();
 
-        services.AddSingleton<ILatestFolderWriter, LatestFolderWriter>();
         services.AddSingleton<IGlobalStatusWriter, GlobalStatusWriter>();
         services.AddSingleton<IRetentionService, RetentionService>();
         services.AddSingleton<ArtifactCopier>();

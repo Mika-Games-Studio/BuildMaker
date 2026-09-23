@@ -75,7 +75,6 @@ public static class ProjectResolver
             Publishing: new ResolvedPublishing(
                 pb?.StagingFolder ?? dpb.StagingFolder ?? "",
                 pb?.ArtifactFolder ?? dpb.ArtifactFolder ?? "",
-                pb?.MaintainLatestFolder ?? dpb.MaintainLatestFolder ?? true,
                 pb?.WriteStatusFiles ?? dpb.WriteStatusFiles ?? true),
             Retention: new ResolvedRetention(
                 rt?.KeepLastBuilds ?? drt.KeepLastBuilds ?? FallbackKeepLastBuilds,

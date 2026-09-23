@@ -1,15 +1,15 @@
 ﻿<#
     Instala o BuildMaker nesta maquina.
 
-    Instala em %LOCALAPPDATA%, cria os atalhos do menu Iniciar e da area de
-    trabalho, registra o programa em Aplicativos Instalados (para aparecer na
-    busca do Windows e poder ser desinstalado por la) e liga o inicio automatico.
+    Nao pede administrador: instala em %LOCALAPPDATA%, cria os atalhos do menu
+    Iniciar e da area de trabalho, registra o programa em Aplicativos Instalados
+    (para aparecer na busca do Windows e poder ser desinstalado por la) e liga o
+    inicio automatico pela chave Run do usuario.
 
-    Precisa de administrador para o inicio automatico, e so para isso. O
-    programa pede elevacao ao abrir, e o Windows nao inicia programa elevado
-    pela chave Run — entao o inicio automatico e uma tarefa agendada com
-    privilegio mais alto, que so o administrador pode criar. Sem elevacao o
-    resto e instalado normalmente e o inicio automatico fica de fora, com aviso.
+    A chave Run, e nao uma tarefa agendada, porque e ela que aparece na aba
+    Inicializar do Gerenciador de Tarefas — onde qualquer um desliga o inicio
+    automatico com um clique, sem precisar saber que existe um Agendador de
+    Tarefas.
 
     Dois modos:
 
@@ -34,10 +34,15 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# O arquivo continua UnityLocalCI.exe: o nome do executavel e identidade, e
+# renomea-lo quebraria o servico e a credencial ja gravados. O que o Windows
+# mostra vem da informacao de versao do proprio binario, que diz BuildMaker.
 $NomeExe    = 'UnityLocalCI.exe'
-$ChaveRun   = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
-$ValorRun   = 'UnityLocalCI'
-$NomeTarefa = 'BuildMaker'
+
+$ChaveRun      = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+$ValorRun      = 'BuildMaker'
+$ValorRunAntigo = 'UnityLocalCI'
+$NomeTarefa    = 'BuildMaker'
 
 # A chave que alimenta Configuracoes > Aplicativos > Aplicativos instalados. Em
 # HKCU porque a instalacao e por usuario, em %LOCALAPPDATA%: registrar em HKLM
@@ -55,7 +60,12 @@ function EhAdministrador {
         [Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
-function CaminhoAtalho($pasta) { Join-Path $pasta 'UnityLocalCI.lnk' }
+# O nome do atalho e o que aparece na area de trabalho e na busca do Windows.
+function CaminhoAtalho($pasta) { Join-Path $pasta 'BuildMaker.lnk' }
+
+# O nome anterior, para a instalacao nova nao deixar dois atalhos para o mesmo
+# programa na area de trabalho.
+function CaminhoAtalhoAntigo($pasta) { Join-Path $pasta 'UnityLocalCI.lnk' }
 $menuIniciar = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
 $areaTrabalho = [Environment]::GetFolderPath('Desktop')
 
@@ -88,8 +98,9 @@ if ($Desinstalar) {
     Ok "registro em Aplicativos Instalados removido"
 
     foreach ($p in $menuIniciar, $areaTrabalho) {
-        $lnk = CaminhoAtalho $p
-        if (Test-Path $lnk) { Remove-Item $lnk -Force; Ok "atalho removido de $p" }
+        foreach ($lnk in (CaminhoAtalho $p), (CaminhoAtalhoAntigo $p)) {
+            if (Test-Path $lnk) { Remove-Item $lnk -Force; Ok "atalho removido de $p" }
+        }
     }
 
     if (Test-Path $Destino) {
@@ -205,6 +216,11 @@ if (-not $SemAtalhos) {
 
     $shell = New-Object -ComObject WScript.Shell
     foreach ($pasta in $menuIniciar, $areaTrabalho) {
+        # O atalho com o nome antigo sai: senao ficariam dois, apontando para o
+        # mesmo programa, e a busca do Windows mostraria os dois.
+        $antigo = CaminhoAtalhoAntigo $pasta
+        if (Test-Path $antigo) { Remove-Item $antigo -Force }
+
         $caminho = CaminhoAtalho $pasta
         $lnk = $shell.CreateShortcut($caminho)
         $lnk.TargetPath = $exe
@@ -273,29 +289,33 @@ Ok "registrado como 'BuildMaker' em Aplicativos Instalados"
 if (-not $SemInicioAutomatico) {
     Passo "Inicio automatico"
 
-    # A chave Run nao serve mais: o programa pede elevacao, e o Windows
-    # simplesmente nao executa por ali um programa que pede elevacao. Fica a
-    # remocao para limpar instalacoes anteriores, que teriam uma entrada morta.
-    Remove-ItemProperty -Path $ChaveRun -Name $ValorRun -ErrorAction SilentlyContinue
-
-    if (EhAdministrador) {
-        # RunLevel Highest: sobe ja elevado, e sem dialogo do UAC — que e o
-        # unico jeito de um programa elevado abrir sozinho no logon.
-        $acao = New-ScheduledTaskAction -Execute $exe -WorkingDirectory $Destino
-        $gatilho = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
-        $config = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries `
-            -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero) -StartWhenAvailable
-
-        Register-ScheduledTask -TaskName $NomeTarefa -Action $acao -Trigger $gatilho `
-            -Settings $config -RunLevel Highest -User $env:USERNAME -Force | Out-Null
-
-        Ok "o app abrira junto com o Windows, ja elevado e sem UAC"
-        Write-Host "      (para desligar: -SemInicioAutomatico, ou apague a tarefa '$NomeTarefa')"
-    } else {
-        Aviso "inicio automatico NAO configurado: criar a tarefa agendada exige administrador"
-        Aviso "rode este instalador num PowerShell como administrador para ligar o inicio automatico"
-        Aviso "sem ele, o programa so abre pelo atalho — e o UAC aparece a cada abertura"
+    # Uma versao intermediaria usou tarefa agendada, porque o programa pedia
+    # elevacao e o Windows nao inicia programa elevado pela chave Run. Foi
+    # revertido: tarefa agendada nao aparece na aba Inicializar do Gerenciador de
+    # Tarefas, e o inicio automatico virava algo que so se desliga sabendo que
+    # existe um Agendador de Tarefas e onde ele fica.
+    if (Get-ScheduledTask -TaskName $NomeTarefa -ErrorAction SilentlyContinue) {
+        if (EhAdministrador) {
+            Unregister-ScheduledTask -TaskName $NomeTarefa -Confirm:$false
+            Ok "tarefa agendada de uma versao anterior removida"
+        } else {
+            Aviso "ha uma tarefa agendada '$NomeTarefa' de uma versao anterior desta ferramenta"
+            Aviso "com ela e a chave Run, o programa abriria duas vezes no logon"
+            Aviso "rode este instalador uma vez como administrador, ou apague a tarefa"
+        }
     }
+
+    # O nome antigo do valor sai junto: com os dois, a aba Inicializar mostraria
+    # duas entradas para o mesmo programa.
+    Remove-ItemProperty -Path $ChaveRun -Name $ValorRunAntigo -ErrorAction SilentlyContinue
+
+    # Aspas no caminho: %LOCALAPPDATA% costuma ter espaco no nome do usuario, e
+    # sem elas a shell corta no primeiro espaco.
+    New-Item -Path $ChaveRun -Force | Out-Null
+    Set-ItemProperty -Path $ChaveRun -Name $ValorRun -Value "`"$exe`""
+    Ok "o app abrira junto com o Windows"
+    Write-Host "      (desligue pela aba Inicializar do Gerenciador de Tarefas, pelo menu"
+    Write-Host "       do icone na bandeja, ou instale com -SemInicioAutomatico)"
 }
 
 # ------------------------------------------------------------------- final
@@ -319,17 +339,10 @@ if ($naoPreenchidos -gt 0) {
 Write-Host ""
 Write-Host "Instalado." -ForegroundColor Green
 Write-Host ""
-$estadoInicio = if ($SemInicioAutomatico) { 'desligado' }
-                elseif (EhAdministrador)  { "ligado (tarefa '$NomeTarefa')" }
-                else                      { 'NAO configurado — faltou administrador' }
-
 Write-Host "  Executavel .....: $exe"
-Write-Host "  Atalhos ........: menu Iniciar e area de trabalho"
+Write-Host "  Atalhos ........: menu Iniciar e area de trabalho, como 'BuildMaker'"
 Write-Host "  Aplicativos ....: aparece como 'BuildMaker', com desinstalar"
-Write-Host "  Inicio automatico: $estadoInicio"
-Write-Host ""
-Write-Host "O programa pede elevacao ao abrir: o UAC vai aparecer a cada abertura manual."
-Write-Host "Aberto pela tarefa agendada, no logon, ele sobe elevado sem dialogo nenhum."
+Write-Host "  Inicio automatico: $(if ($SemInicioAutomatico) { 'desligado' } else { 'ligado' })"
 Write-Host ""
 Write-Host "Fechar a janela no X esconde o app na bandeja e as builds continuam."
 Write-Host "Para sair de verdade, botao direito no icone da bandeja e Sair."

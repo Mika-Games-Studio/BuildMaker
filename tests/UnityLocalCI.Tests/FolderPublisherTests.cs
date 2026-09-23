@@ -67,35 +67,28 @@ public class FolderPublisherTests : IDisposable
         Assert.False(File.Exists(Path.Combine(_destination, artifact.Name)));
     }
 
+    /// <summary>
+    /// A pasta de destino tem os zips, e nada mais.
+    ///
+    /// Ja teve uma pasta latest\ com a ultima build descompactada ao lado deles.
+    /// Este teste e o que garante que publicar nao volte a criar pasta nenhuma
+    /// ali: o time abre esse diretorio para pegar a build, e o que estiver
+    /// dentro dele precisa ser build.
+    /// </summary>
     [Fact]
-    public async Task Publicar_tambem_atualiza_a_pasta_latest()
+    public async Task Publicar_deixa_no_destino_so_o_zip()
     {
         var (publisher, context, artifact) = await SetupAsync();
 
         Directory.CreateDirectory(Path.Combine(context.BuildOutputPath, "Build"));
         await File.WriteAllTextAsync(Path.Combine(context.BuildOutputPath, "index.html"), "a build");
-        await File.WriteAllTextAsync(Path.Combine(context.BuildOutputPath, "rodar.bat"), "@echo off");
 
         var result = await publisher.PublishAsync(artifact, context, default);
 
         Assert.True(result.Success);
-        Assert.Equal("a build", await File.ReadAllTextAsync(Path.Combine(_destination, "latest", "index.html")));
-        Assert.True(File.Exists(Path.Combine(_destination, "latest", "rodar.bat")));
+        Assert.Equal([artifact.Name], Directory.GetFiles(_destination).Select(Path.GetFileName));
+        Assert.Empty(Directory.GetDirectories(_destination));
         Assert.Empty(context.Warnings);
-    }
-
-    [Fact]
-    public async Task Falha_na_latest_nao_derruba_a_publicacao_do_zip()
-    {
-        // A pasta da build nao existe: a latest\ falha, mas o zip ja esta no
-        // destino e e ele que importa. A falha vira aviso no _STATUS.txt.
-        var (publisher, context, artifact) = await SetupAsync();
-
-        var result = await publisher.PublishAsync(artifact, context, default);
-
-        Assert.True(result.Success);
-        Assert.True(File.Exists(Path.Combine(_destination, artifact.Name)));
-        Assert.Contains(context.Warnings, w => w.Contains(@"latest\"));
     }
 
     [Fact]
@@ -141,7 +134,6 @@ public class FolderPublisherTests : IDisposable
 
         var publisher = new FolderPublisher(
             new ArtifactCopier(NullLogger<ArtifactCopier>.Instance),
-            new LatestFolderWriter(NullLogger<LatestFolderWriter>.Instance),
             NullLogger<FolderPublisher>.Instance);
 
         return (publisher, context, new FileInfo(zipPath));
