@@ -59,7 +59,62 @@ Write-Host "   Executavel: $exe ($tamanho MB)"
 if (-not $SemZip) {
     Passo "Compactando"
     if (Test-Path $Zip) { Remove-Item $Zip -Force }
-    Compress-Archive -Path (Join-Path $Saida '*') -DestinationPath $Zip
+
+    # ZipFile.CreateFromDirectory, e nao Compress-Archive.
+    #
+    # O Compress-Archive do Windows PowerShell 5.1 abre cada arquivo com
+    # FileShare.None: basta qualquer outro processo ter o arquivo aberto, mesmo
+    # so para leitura, e ele falha com IOException/PermissionDenied. Numa maquina
+    # com antivirus de tempo real isso acontece direto — os scripts sao copiados
+    # para publicado\tools\ poucos segundos antes daqui, e o scanner ainda esta
+    # com eles na mao quando a compactacao chega. O sintoma era um pacote que
+    # falhava em uma execucao e passava na seguinte, sem nada ter mudado.
+    #
+    # CreateFromDirectory abre com FileShare.Read, que e o que qualquer leitor
+    # deveria usar. De quebra e bem mais rapido para os 52 MB do executavel.
+    # As entradas sao montadas uma a uma, e nao com CreateFromDirectory, por
+    # causa do separador: o ZipFile do .NET Framework grava 'tools\arquivo', com
+    # barra invertida, e a especificacao do zip pede '/'. O Expand-Archive
+    # aceita, mas 7-Zip, macOS e Linux criam um arquivo chamado literalmente
+    # "tools\instalar.ps1" — e o pacote vai para uma release do GitHub, onde nao
+    # se escolhe com o que ele sera aberto.
+    # As duas: ZipFile vem da .FileSystem, ZipArchiveMode e CompressionLevel da
+    # outra. Carregar so a primeira faz o script morrer no meio da compactacao.
+    Add-Type -AssemblyName System.IO.Compression
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+
+    $raizPacote = (Resolve-Path $Saida).Path.TrimEnd('\')
+    $arquivos = Get-ChildItem $raizPacote -Recurse -File
+
+    $tentativas = 3
+    for ($i = 1; $i -le $tentativas; $i++) {
+        try {
+            $pacote = [IO.Compression.ZipFile]::Open(
+                [IO.Path]::GetFullPath($Zip), [IO.Compression.ZipArchiveMode]::Create)
+            try {
+                foreach ($arquivo in $arquivos) {
+                    $nome = $arquivo.FullName.Substring($raizPacote.Length + 1).Replace('\', '/')
+                    $entrada = $pacote.CreateEntry($nome, [IO.Compression.CompressionLevel]::Optimal)
+
+                    # FileShare.Read: e so isto que o Compress-Archive nao faz.
+                    $origem = [IO.File]::Open($arquivo.FullName, 'Open', 'Read', 'Read')
+                    try {
+                        $destino = $entrada.Open()
+                        try { $origem.CopyTo($destino) } finally { $destino.Dispose() }
+                    } finally { $origem.Dispose() }
+                }
+            } finally { $pacote.Dispose() }
+            break
+        } catch [IO.IOException] {
+            # Sobra o caso de alguem segurar o arquivo em modo exclusivo, que
+            # nenhuma escolha de FileShare resolve. Ai so esperar adianta.
+            if ($i -eq $tentativas) { throw }
+            Write-Host "   arquivo em uso; tentando de novo ($i de $tentativas)" -ForegroundColor Yellow
+            if (Test-Path $Zip) { Remove-Item $Zip -Force }
+            Start-Sleep -Seconds 3
+        }
+    }
+
     $zipMb = [Math]::Round((Get-Item $Zip).Length / 1MB, 1)
     Write-Host "   $Zip ($zipMb MB)"
 }
