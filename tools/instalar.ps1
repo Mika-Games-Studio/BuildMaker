@@ -1,8 +1,15 @@
 ﻿<#
-    Instala o UnityLocalCI nesta maquina.
+    Instala o BuildMaker nesta maquina.
 
-    Nao pede administrador: instala em %LOCALAPPDATA%, cria os atalhos do menu
-    Iniciar e da area de trabalho, e liga o inicio automatico com o Windows.
+    Instala em %LOCALAPPDATA%, cria os atalhos do menu Iniciar e da area de
+    trabalho, registra o programa em Aplicativos Instalados (para aparecer na
+    busca do Windows e poder ser desinstalado por la) e liga o inicio automatico.
+
+    Precisa de administrador para o inicio automatico, e so para isso. O
+    programa pede elevacao ao abrir, e o Windows nao inicia programa elevado
+    pela chave Run — entao o inicio automatico e uma tarefa agendada com
+    privilegio mais alto, que so o administrador pode criar. Sem elevacao o
+    resto e instalado normalmente e o inicio automatico fica de fora, com aviso.
 
     Dois modos:
 
@@ -27,14 +34,26 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$NomeExe   = 'UnityLocalCI.exe'
-$ChaveRun  = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
-$ValorRun  = 'UnityLocalCI'
+$NomeExe    = 'UnityLocalCI.exe'
+$ChaveRun   = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+$ValorRun   = 'UnityLocalCI'
+$NomeTarefa = 'BuildMaker'
+
+# A chave que alimenta Configuracoes > Aplicativos > Aplicativos instalados. Em
+# HKCU porque a instalacao e por usuario, em %LOCALAPPDATA%: registrar em HKLM
+# anunciaria para todos os usuarios da maquina um programa que so existe para um.
+$ChaveDesinstalar = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\BuildMaker'
 
 function Passo($t) { Write-Host ""; Write-Host "== $t" -ForegroundColor Cyan }
 function Ok($t)    { Write-Host "   [ok] $t" }
 function Aviso($t) { Write-Host "   [!]  $t" -ForegroundColor Yellow }
 function Erro($t)  { Write-Host "   [ERRO] $t" -ForegroundColor Red; exit 1 }
+
+function EhAdministrador {
+    $identidade = [Security.Principal.WindowsIdentity]::GetCurrent()
+    (New-Object Security.Principal.WindowsPrincipal $identidade).IsInRole(
+        [Security.Principal.WindowsBuiltInRole]::Administrator)
+}
 
 function CaminhoAtalho($pasta) { Join-Path $pasta 'UnityLocalCI.lnk' }
 $menuIniciar = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
@@ -53,7 +72,20 @@ if ($Desinstalar) {
     }
 
     Remove-ItemProperty -Path $ChaveRun -Name $ValorRun -ErrorAction SilentlyContinue
-    Ok "inicio automatico removido"
+    if (Get-ScheduledTask -TaskName $NomeTarefa -ErrorAction SilentlyContinue) {
+        if (EhAdministrador) {
+            Unregister-ScheduledTask -TaskName $NomeTarefa -Confirm:$false
+            Ok "tarefa de inicio automatico removida"
+        } else {
+            Aviso "a tarefa '$NomeTarefa' ficou para tras: remove-la exige administrador"
+            Aviso "rode de novo num PowerShell como administrador, ou apague pelo Agendador de Tarefas"
+        }
+    } else {
+        Ok "inicio automatico removido"
+    }
+
+    Remove-Item $ChaveDesinstalar -Recurse -Force -ErrorAction SilentlyContinue
+    Ok "registro em Aplicativos Instalados removido"
 
     foreach ($p in $menuIniciar, $areaTrabalho) {
         $lnk = CaminhoAtalho $p
@@ -67,7 +99,7 @@ if ($Desinstalar) {
 
     Write-Host ""
     Write-Host "Desinstalado." -ForegroundColor Green
-    Write-Host "O estado, os logs e os artefatos em C:\ci (ou onde estiverem configurados) NAO foram apagados."
+    Write-Host "O historico em %LOCALAPPDATA%\BuildMaker e os artefatos das builds NAO foram apagados."
     exit 0
 }
 
@@ -204,15 +236,66 @@ if (-not $SemAtalhos) {
 
 # -------------------------------------------------------- inicio automatico
 
+Passo "Aplicativos Instalados"
+
+# Sem esta chave o programa nao aparece em Configuracoes > Aplicativos, nao e
+# encontrado pela busca do Windows e nao tem como ser desinstalado a nao ser
+# rodando este script na mao — que e como ele estava ate agora.
+$tamanhoKb = [int]((Get-ChildItem $Destino -Recurse -File | Measure-Object Length -Sum).Sum / 1KB)
+$versao = (Get-Item $exe).VersionInfo.FileVersion
+if (-not $versao) { $versao = '1.0.0' }
+
+$desinstalador = "powershell.exe -ExecutionPolicy Bypass -File `"$(Join-Path $Destino 'instalar.ps1')`" -Desinstalar"
+
+New-Item -Path $ChaveDesinstalar -Force | Out-Null
+$entradas = @{
+    DisplayName     = 'BuildMaker'
+    DisplayVersion  = $versao
+    Publisher       = 'BSA Tech'
+    DisplayIcon     = $exe
+    InstallLocation = $Destino
+    UninstallString = $desinstalador
+    EstimatedSize   = $tamanhoKb
+    NoModify        = 1
+    NoRepair        = 1
+}
+foreach ($nome in $entradas.Keys) {
+    $tipo = if ($entradas[$nome] -is [int]) { 'DWord' } else { 'String' }
+    New-ItemProperty -Path $ChaveDesinstalar -Name $nome -Value $entradas[$nome] -PropertyType $tipo -Force | Out-Null
+}
+
+# O desinstalador precisa existir depois que a pasta de origem sumir.
+Copy-Item $PSCommandPath (Join-Path $Destino 'instalar.ps1') -Force
+Ok "registrado como 'BuildMaker' em Aplicativos Instalados"
+
+# -------------------------------------------------------- inicio automatico
+
 if (-not $SemInicioAutomatico) {
     Passo "Inicio automatico"
 
-    # Aspas no caminho: %LOCALAPPDATA% costuma ter espaco no nome do usuario, e
-    # sem elas a shell corta no primeiro espaco.
-    New-Item -Path $ChaveRun -Force | Out-Null
-    Set-ItemProperty -Path $ChaveRun -Name $ValorRun -Value "`"$exe`""
-    Ok "o app abrira junto com o Windows"
-    Write-Host "      (desligue pelo menu do icone na bandeja, ou rode com -SemInicioAutomatico)"
+    # A chave Run nao serve mais: o programa pede elevacao, e o Windows
+    # simplesmente nao executa por ali um programa que pede elevacao. Fica a
+    # remocao para limpar instalacoes anteriores, que teriam uma entrada morta.
+    Remove-ItemProperty -Path $ChaveRun -Name $ValorRun -ErrorAction SilentlyContinue
+
+    if (EhAdministrador) {
+        # RunLevel Highest: sobe ja elevado, e sem dialogo do UAC — que e o
+        # unico jeito de um programa elevado abrir sozinho no logon.
+        $acao = New-ScheduledTaskAction -Execute $exe -WorkingDirectory $Destino
+        $gatilho = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+        $config = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries `
+            -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero) -StartWhenAvailable
+
+        Register-ScheduledTask -TaskName $NomeTarefa -Action $acao -Trigger $gatilho `
+            -Settings $config -RunLevel Highest -User $env:USERNAME -Force | Out-Null
+
+        Ok "o app abrira junto com o Windows, ja elevado e sem UAC"
+        Write-Host "      (para desligar: -SemInicioAutomatico, ou apague a tarefa '$NomeTarefa')"
+    } else {
+        Aviso "inicio automatico NAO configurado: criar a tarefa agendada exige administrador"
+        Aviso "rode este instalador num PowerShell como administrador para ligar o inicio automatico"
+        Aviso "sem ele, o programa so abre pelo atalho — e o UAC aparece a cada abertura"
+    }
 }
 
 # ------------------------------------------------------------------- final
@@ -236,14 +319,22 @@ if ($naoPreenchidos -gt 0) {
 Write-Host ""
 Write-Host "Instalado." -ForegroundColor Green
 Write-Host ""
+$estadoInicio = if ($SemInicioAutomatico) { 'desligado' }
+                elseif (EhAdministrador)  { "ligado (tarefa '$NomeTarefa')" }
+                else                      { 'NAO configurado — faltou administrador' }
+
 Write-Host "  Executavel .....: $exe"
 Write-Host "  Atalhos ........: menu Iniciar e area de trabalho"
-Write-Host "  Inicio automatico: $(if ($SemInicioAutomatico) { 'desligado' } else { 'ligado' })"
+Write-Host "  Aplicativos ....: aparece como 'BuildMaker', com desinstalar"
+Write-Host "  Inicio automatico: $estadoInicio"
+Write-Host ""
+Write-Host "O programa pede elevacao ao abrir: o UAC vai aparecer a cada abertura manual."
+Write-Host "Aberto pela tarefa agendada, no logon, ele sobe elevado sem dialogo nenhum."
 Write-Host ""
 Write-Host "Fechar a janela no X esconde o app na bandeja e as builds continuam."
 Write-Host "Para sair de verdade, botao direito no icone da bandeja e Sair."
 Write-Host ""
-Write-Host "Para desinstalar:  instalar.ps1 -Desinstalar"
+Write-Host "Para desinstalar: por Configuracoes > Aplicativos, ou instalar.ps1 -Desinstalar"
 
 # O instalador nao abre o programa.
 #

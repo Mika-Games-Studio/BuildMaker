@@ -12,9 +12,9 @@ public interface ILatestFolderWriter
 }
 
 /// <summary>
-/// A pasta latest\ e a build mais recente descompactada e pronta para rodar:
-/// quem so quer testar entra, roda o rodar.bat e joga, sem baixar nem
-/// descompactar nada.
+/// A pasta latest\ e a build mais recente ja descompactada: quem so quer testar
+/// aponta um servidor para ela, sem baixar nem descompactar nada. Ela contem
+/// exatamente o que o Unity produziu — nenhum arquivo do CI entra aqui.
 ///
 /// A troca e feita por rename de diretorio, nunca apagando e recopiando no
 /// lugar. Copiar por cima deixaria a pasta em estado parcial por varios

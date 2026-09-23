@@ -24,7 +24,7 @@ public sealed record ResolvedUnity(
     int TimeoutMinutes,
     string[] ExtraArgs);
 
-public sealed record ResolvedPackaging(string NamePattern, bool IncludeLauncher);
+public sealed record ResolvedPackaging(string NamePattern);
 
 public sealed record ResolvedPublishing(
     string StagingFolder,

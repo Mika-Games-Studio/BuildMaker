@@ -1,6 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <ApplicationIcon>unitylocalci.ico</ApplicationIcon>
+
+    <!-- Pede elevacao ao abrir. O porque esta no proprio arquivo. -->
+    <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
   <PropertyGroup>
     <!-- WinExe: sem janela de console atras da interface. O modo servico nao

@@ -1,36 +1,28 @@
 using System.IO.Compression;
 using System.Security.Cryptography;
-using System.Text.Json;
 using Microsoft.Extensions.Logging;
-using UnityLocalCI.Core.Abstractions;
-using UnityLocalCI.Core.Publishing;
 
 namespace UnityLocalCI.Core.Pipeline;
 
 /// <summary>
-/// Etapa 3: valida a saida, compacta, calcula o SHA-256 e so entao escreve os
-/// arquivos de apoio. O zip nasce no staging local; a copia para o destino e
-/// problema da etapa 4.
+/// Etapa 3: valida a saida, compacta e calcula o SHA-256. O zip nasce no
+/// staging local; a copia para o destino e problema da etapa 4.
 ///
-/// A ordem e deliberada. O zip leva exatamente o que o Unity produziu, nada
-/// mais: ele e o que vai para o navegador, para a loja ou para quem pediu a
-/// build, e um rodar.bat no meio dos arquivos do jogo confunde na melhor das
-/// hipoteses e quebra a validacao de um portal na pior.
+/// Nada e acrescentado a saida do Unity. Esta etapa ja escreveu ali um
+/// manifest.json e um rodar.bat que subia um servidor estatico — a build WebGL
+/// nao abre por file://, e o launcher resolvia isso para quem so queria testar.
+/// Os dois sairam: o zip e a pasta latest\ sao o jogo, e arquivo de CI no meio
+/// dos arquivos do jogo confunde quem recebe e derruba a validacao de um portal.
 ///
-/// O manifest e o launcher continuam sendo escritos, depois, na pasta de saida
-/// — que e de onde a pasta latest\ e copiada. La eles servem: latest\ existe
-/// para rodar a build nesta maquina, e uma build WebGL nao abre por file://.
+/// O que o manifest dizia nao se perdeu — commit, autor, duracao e tamanho
+/// estao no status em JSON, em %LOCALAPPDATA%\BuildMaker\status. O que se perdeu
+/// e poder abrir a latest\ com um duplo clique; agora ela precisa de um servidor.
 /// </summary>
 public sealed class PackageStep : IBuildStep
 {
-    private readonly IClock _clock;
     private readonly ILogger<PackageStep> _logger;
 
-    public PackageStep(IClock clock, ILogger<PackageStep> logger)
-    {
-        _clock = clock;
-        _logger = logger;
-    }
+    public PackageStep(ILogger<PackageStep> logger) => _logger = logger;
 
     public string Name => "Package";
 
@@ -55,16 +47,6 @@ public sealed class PackageStep : IBuildStep
 
         _logger.LogInformation(
             "Artefato gerado em {Path} ({Size}).", zipPath, FormatSize(info.Length));
-
-        // Depois do zip, nunca antes: estes arquivos sao do CI, e o zip e do jogo.
-        await WriteManifestAsync(context, ct).ConfigureAwait(false);
-
-        if (context.Project.Packaging.IncludeLauncher)
-        {
-            await LauncherScript.WriteAsync(context.BuildOutputPath, ct).ConfigureAwait(false);
-            _logger.LogInformation(
-                "Launcher {Launcher} escrito para a pasta latest.", LauncherScript.LauncherFileName);
-        }
 
         return StepResult.Ok;
     }
@@ -101,29 +83,6 @@ public sealed class PackageStep : IBuildStep
 
     private static string Sanitize(string value)
         => string.Concat(value.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '-' : c));
-
-    private async Task WriteManifestAsync(BuildContext context, CancellationToken ct)
-    {
-        var manifest = new
-        {
-            buildId = context.BuildId,
-            project = context.Project.Name,
-            branch = context.Project.Repository.Branch,
-            commitSha = context.Commit.Sha,
-            commitAuthor = context.Commit.Author,
-            commitMessage = context.Commit.Message,
-            editorVersion = context.Project.Unity.EditorVersion,
-            buildTarget = context.Project.Unity.BuildTarget,
-            startedAt = context.StartedAt,
-            finishedAt = _clock.UtcNow,
-            durationSeconds = (int)(_clock.UtcNow - context.StartedAt).TotalSeconds,
-            warnings = context.Warnings,
-        };
-
-        var path = Path.Combine(context.BuildOutputPath, "manifest.json");
-        var json = JsonSerializer.Serialize(manifest, new JsonSerializerOptions { WriteIndented = true });
-        await File.WriteAllTextAsync(path, json, ct).ConfigureAwait(false);
-    }
 
     public static async Task<string> ComputeSha256Async(string path, CancellationToken ct)
     {

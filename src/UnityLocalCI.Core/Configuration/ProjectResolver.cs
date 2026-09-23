@@ -71,8 +71,7 @@ public static class ProjectResolver
                 u?.TimeoutMinutes ?? du.TimeoutMinutes ?? FallbackTimeoutMinutes,
                 u?.ExtraArgs ?? du.ExtraArgs ?? Array.Empty<string>()),
             Packaging: new ResolvedPackaging(
-                pk?.NamePattern ?? dpk.NamePattern ?? FallbackNamePattern,
-                pk?.IncludeLauncher ?? dpk.IncludeLauncher ?? true),
+                pk?.NamePattern ?? dpk.NamePattern ?? FallbackNamePattern),
             Publishing: new ResolvedPublishing(
                 pb?.StagingFolder ?? dpb.StagingFolder ?? "",
                 pb?.ArtifactFolder ?? dpb.ArtifactFolder ?? "",

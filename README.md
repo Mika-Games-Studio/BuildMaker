@@ -38,7 +38,11 @@ Ou, para instalar direto de uma release publicada no GitHub, sem baixar nada à 
 powershell -ExecutionPolicy Bypass -File tools\instalar.ps1 -DeUrl https://.../UnityLocalCI.zip
 ```
 
-**Não pede administrador.** Instala em `%LOCALAPPDATA%\UnityLocalCI`, cria atalho no menu Iniciar e na área de trabalho, liga o início automático com o Windows e abre o programa. Uma reinstalação por cima preserva o `appsettings.json`.
+Instala em `%LOCALAPPDATA%\UnityLocalCI`, cria atalho no menu Iniciar e na área de trabalho, e registra o programa em **Configurações → Aplicativos** — é de lá que ele aparece na busca do Windows e pode ser desinstalado. Uma reinstalação por cima preserva o `appsettings.json` e os projetos cadastrados.
+
+**Rode como administrador**, e só por causa do início automático. O programa pede elevação ao abrir (ver [Por que o programa pede elevação](#por-que-o-programa-pede-elevação)), e o Windows não inicia programa elevado pela chave `Run` — então o início automático virou uma tarefa agendada com privilégio mais alto, que só o administrador pode criar. Sem elevação, todo o resto é instalado normalmente e só o início automático fica de fora, com aviso.
+
+O instalador **não abre o programa no final**. Abra pelo atalho.
 
 ### 3. Conectar ao GitHub e ativar a licença
 
@@ -106,7 +110,17 @@ powershell -ExecutionPolicy Bypass -File tools\testar-local.ps1
 powershell -ExecutionPolicy Bypass -File tools\instalar.ps1 -Desinstalar
 ```
 
-Remove arquivos, atalhos e início automático. **Não** apaga o estado, os logs nem os artefatos em `C:\ci\`.
+Ou por **Configurações → Aplicativos → BuildMaker → Desinstalar**, que chama o mesmo script.
+
+Remove arquivos, atalhos, o registro em Aplicativos e o início automático — este último precisa de administrador, como na instalação. **Não** apaga o histórico em `%LOCALAPPDATA%\BuildMaker` nem os artefatos das builds.
+
+### Por que o programa pede elevação
+
+Sem elevação, o Behavior Monitoring do Apex One trata este executável como programa recém-encontrado — sem assinatura de fornecedor, prevalência 1 na máquina — e bloqueia a execução com um diálogo. Elevado, ele passa.
+
+Nada disso engana o antivírus: o executável é o mesmo, no mesmo lugar, com o mesmo hash, e quem autoriza é o usuário no diálogo do próprio Windows. O que muda é o nível de privilégio declarado no manifesto — e declarar que um programa precisa de privilégio é o oposto de esconder o que ele é.
+
+O custo é real: o UAC aparece a cada abertura manual, e as builds do Unity passam a rodar elevadas. Aberto pela tarefa agendada, no logon, ele sobe elevado sem diálogo nenhum.
 
 ---
 
@@ -415,7 +429,6 @@ dotnet test
 | Contrato de log entre o `Builder.cs` e o pipeline | **pronto** |
 | Status e histórico em JSON, em `%LOCALAPPDATA%\BuildMaker\status\` | **pronto** |
 | Pasta `latest\` trocada por rename de diretório | **pronto** |
-| `rodar.bat` em `latest\` | **pronto** |
 | Gatilho manual por arquivo observado | **pronto** |
 | Retenção por contagem | **pronto** |
 
@@ -445,19 +458,13 @@ O formato é JSON, e não texto alinhado a coluna, porque o leitor mudou. Quem q
 
 Isso é uma troca, e vale dizer qual. O log em arquivo foi o que permitiu provar, quando o aplicativo fechava sozinho no meio das builds, que quem o encerrava era o antivírus e não ele próprio — sem arquivo, um processo morto não deixa rastro nenhum. Se voltar a acontecer, o caminho passa a ser o Visualizador de Eventos do Windows e o log do agente de segurança.
 
-A pasta `latest\` é a build mais recente já descompactada: quem só quer testar entra, roda o `rodar.bat` e joga. A troca é feita por rename de diretório — a build nova é copiada inteira para `latest.new\` e só então assume o nome —, porque copiar por cima deixaria a pasta em estado parcial por vários segundos, e quem a abrisse nesse intervalo pegaria uma build quebrada sem nenhum sinal disso.
+A pasta `latest\` é a build mais recente já descompactada, com exatamente os arquivos que o Unity produziu. A troca é feita por rename de diretório — a build nova é copiada inteira para `latest.new\` e só então assume o nome —, porque copiar por cima deixaria a pasta em estado parcial por vários segundos, e quem a abrisse nesse intervalo pegaria uma build quebrada sem nenhum sinal disso.
 
-### `rodar.bat`: por que o duplo clique no `index.html` não serve
+### Por que o duplo clique no `index.html` não serve
 
-Uma build WebGL não roda por `file://`: o navegador bloqueia `.wasm` e `.data` nesse protocolo, e o resultado é uma tela preta sem mensagem de erro. O `rodar.bat` sobe um servidor estático na própria pasta e abre o navegador. Ele tenta, nesta ordem, o que existir na máquina de quem baixou:
+Uma build WebGL não roda por `file://`: o navegador bloqueia `.wasm` e `.data` nesse protocolo, e o resultado é uma tela preta sem mensagem de erro. Com compressão, ainda falta o cabeçalho `Content-Encoding`. Para abrir a `latest` ou um zip descompactado, aponte um servidor estático para a pasta — `python -m http.server` ou `npx serve` resolvem, e para uma build com Brotli é preciso um que envie `Content-Encoding` para `.br` e `.gz`.
 
-1. `python -m http.server`
-2. `npx serve`
-3. PowerShell, pelo `_servidor.ps1` que acompanha o launcher
-
-Se nada existir, ele explica o motivo e aponta onde instalar, em vez de falhar em silêncio. Para usar outra porta: `rodar.bat 8090`.
-
-> **Desvio da especificação.** Ela previa, como terceira estratégia, um executável .NET de arquivo único embutido no zip. Trocamos por PowerShell porque ele já está em toda máquina Windows e não acrescenta dezenas de MB a **cada** artefato. O servidor em PowerShell ainda tem uma vantagem sobre os outros dois: ele envia `Content-Encoding` para arquivos `.br` e `.gz`, então roda até uma build compactada com Brotli — exatamente o caso que quebraria num `python -m http.server`.
+> O CI já escreveu um `rodar.bat` dentro de cada build, que subia esse servidor sozinho. Ele saiu: o zip e a `latest` são o jogo, e arquivo do CI misturado aos arquivos do jogo confunde quem recebe o pacote e derruba a validação de um portal. A conveniência não pagava o preço.
 
 ### Construir agora, sem esperar o merge
 
@@ -568,7 +575,7 @@ powershell -ExecutionPolicy Bypass -File tools\install-service.ps1 -Conta "DOMIN
 
 > **Duas armadilhas de conta de serviço.** O Credential Manager é **por usuário**: os segredos precisam ser gravados logado como a conta que executa o serviço, senão ele sobe e não encontra nada. E o .NET instalado no perfil de um usuário (`%USERPROFILE%\.dotnet`) não é visto por outra conta — instale-o para a máquina inteira, ou defina `DOTNET_ROOT` no ambiente do serviço. O `install-service.ps1` avisa sobre as duas.
 
-> Os demais campos de configuração da fase 2 (`MaintainLatestFolder`, `WriteStatusFiles`, `IncludeLauncher`, `Retention`, `ManualTriggerFile`, `GlobalStatusFile`) já existem e são validados, mas ainda não têm efeito.
+> Os demais campos de configuração da fase 2 (`MaintainLatestFolder`, `WriteStatusFiles`, `Retention`, `ManualTriggerFile`, `GlobalStatusFile`) já existem e são validados, mas ainda não têm efeito.
 
 ### Fase 3 — operação (concluída)
 

@@ -133,7 +133,6 @@ public sealed class UnityOptions
 public sealed class PackagingOptions
 {
     public string? NamePattern { get; set; }
-    public bool? IncludeLauncher { get; set; }
 }
 
 public sealed class PublishingOptions

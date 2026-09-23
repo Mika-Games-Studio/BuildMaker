@@ -9,12 +9,14 @@ using Xunit;
 namespace UnityLocalCI.Tests;
 
 /// <summary>
-/// O conteudo do zip entregue.
+/// O conteudo do que e entregue.
 ///
-/// O zip e o jogo: e ele que vai para o navegador, para a loja ou para quem
-/// pediu a build. Arquivo do CI misturado com os arquivos do jogo confunde quem
-/// recebe, e um portal que valide o pacote rejeita por causa disso. O manifest e
-/// o launcher continuam existindo — na pasta de saida, de onde latest\ e copiada.
+/// O zip e a pasta latest\ sao o jogo: e o que vai para o navegador, para a loja
+/// ou para quem pediu a build. Arquivo do CI misturado com os arquivos do jogo
+/// confunde quem recebe, e um portal que valide o pacote rejeita por causa disso.
+///
+/// Como a latest\ e copiada da pasta de saida, a unica forma de manter as duas
+/// limpas e nao escrever nada ali — e e isso que estes testes fixam.
 /// </summary>
 public class PackageStepTests : IDisposable
 {
@@ -39,12 +41,11 @@ public class PackageStepTests : IDisposable
         GC.SuppressFinalize(this);
     }
 
-    private async Task<BuildContext> ExecutarAsync(bool launcher = true)
+    private async Task<BuildContext> ExecutarAsync()
     {
         var project = TestProjects.Create(staging: Staging) with
         {
-            Packaging = new UnityLocalCI.Core.Configuration.ResolvedPackaging(
-                "{project}-{sha}.zip", launcher),
+            Packaging = new UnityLocalCI.Core.Configuration.ResolvedPackaging("{project}-{sha}.zip"),
         };
 
         var context = new BuildContext
@@ -63,7 +64,7 @@ public class PackageStepTests : IDisposable
             },
         };
 
-        var step = new PackageStep(new FakeClock(), NullLogger<PackageStep>.Instance);
+        var step = new PackageStep(NullLogger<PackageStep>.Instance);
         var result = await step.ExecuteAsync(context, default);
 
         Assert.True(result.Success, result.ErrorSummary);
@@ -86,41 +87,40 @@ public class PackageStepTests : IDisposable
         Assert.Contains("build-guid.txt", entradas);
     }
 
-    [Fact]
-    public async Task O_zip_nao_leva_o_launcher_do_CI()
-    {
-        var entradas = EntradasDoZip(await ExecutarAsync());
-
-        Assert.DoesNotContain(LauncherScript.LauncherFileName, entradas);
-        Assert.DoesNotContain(LauncherScript.ServerFileName, entradas);
-    }
-
-    [Fact]
-    public async Task O_zip_nao_leva_o_manifest_do_CI()
-        => Assert.DoesNotContain("manifest.json", EntradasDoZip(await ExecutarAsync()));
-
     /// <summary>
-    /// Fora do zip, mas nao perdidos: latest\ e copiada da pasta de saida, e e la
-    /// que o rodar.bat serve — uma build WebGL nao abre por file://.
+    /// Nada e escrito na pasta de saida. Como a latest\ e uma copia dela, este
+    /// e o teste que mantem as duas com so os arquivos do jogo.
     /// </summary>
     [Fact]
-    public async Task O_launcher_e_o_manifest_ficam_na_pasta_de_saida()
+    public async Task A_pasta_de_saida_fica_como_o_unity_a_deixou()
+    {
+        var antes = Directory
+            .GetFileSystemEntries(Saida, "*", SearchOption.AllDirectories)
+            .Order()
+            .ToArray();
+
+        await ExecutarAsync();
+
+        Assert.Equal(antes, Directory
+            .GetFileSystemEntries(Saida, "*", SearchOption.AllDirectories)
+            .Order()
+            .ToArray());
+    }
+
+    /// <summary>
+    /// Nomes de arquivos que o CI ja escreveu ali e nao escreve mais. Ficam
+    /// citados para o dia em que alguem pensar em trazer de volta um deles.
+    /// </summary>
+    [Theory]
+    [InlineData("rodar.bat")]
+    [InlineData("_servidor.ps1")]
+    [InlineData("manifest.json")]
+    public async Task O_zip_nao_leva_arquivo_do_CI(string nome)
     {
         var context = await ExecutarAsync();
 
-        Assert.True(File.Exists(Path.Combine(Saida, LauncherScript.LauncherFileName)));
-        Assert.True(File.Exists(Path.Combine(Saida, LauncherScript.ServerFileName)));
-        Assert.True(File.Exists(Path.Combine(Saida, "manifest.json")));
-        Assert.Contains("\"buildId\": 7", await File.ReadAllTextAsync(Path.Combine(Saida, "manifest.json")));
-    }
-
-    [Fact]
-    public async Task Com_o_launcher_desligado_ele_nao_e_escrito_em_lugar_nenhum()
-    {
-        var context = await ExecutarAsync(launcher: false);
-
-        Assert.False(File.Exists(Path.Combine(Saida, LauncherScript.LauncherFileName)));
-        Assert.DoesNotContain(LauncherScript.LauncherFileName, EntradasDoZip(context));
+        Assert.DoesNotContain(nome, EntradasDoZip(context));
+        Assert.False(File.Exists(Path.Combine(Saida, nome)));
     }
 
     [Fact]
