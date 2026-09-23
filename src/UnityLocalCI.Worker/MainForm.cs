@@ -60,6 +60,22 @@ public sealed class MainForm : Form
     private readonly PillButton _republish = new("Reenviar pendentes", ButtonKind.Ghost) { Width = 148 };
     private readonly PillButton _toggleHost = new("Parar serviço", ButtonKind.Ghost) { Width = 116 };
 
+    private readonly PillButton _cancelarBuild = new("Cancelar build") { Width = 130 };
+    private readonly PillButton _limparHistorico = new("Limpar histórico", ButtonKind.Ghost) { Width = 142 };
+    private readonly PillButton _pausarFila = new("Pausar fila", ButtonKind.Ghost) { Width = 116 };
+
+    /// <summary>Gira a roda das builds em execucao. Parado quando nao ha nenhuma.</summary>
+    private readonly System.Windows.Forms.Timer _spinner = new();
+    private float _anguloDaRoda;
+
+    /// <summary>Indices das colunas da grade de builds que o codigo precisa nomear.</summary>
+    private const int ColunaDaRoda = 0;
+    private const int ColunaDoId = 1;
+    private const int ColunaDoProjeto = 2;
+    private const int ColunaDoResultado = 3;
+    private const int ColunaDoErro = 8;
+    private const int ColunaDaAcao = 9;
+
     private long? _selectedBuildId;
 
     /// <summary>
@@ -229,19 +245,47 @@ public sealed class MainForm : Form
             "Builds",
             "Histórico das execuções. Selecione uma linha para ler o log dela.");
 
+        _limparHistorico.Click += (_, _) => ClearHistory();
+        _cancelarBuild.Click += (_, _) => CancelRunningBuild();
+        _pausarFila.Click += (_, _) => TogglePause();
+
+        header.Actions.Controls.AddRange([_cancelarBuild, _limparHistorico, _pausarFila]);
+
         _buildsGrid.Columns.AddRange(
-            TextColumn("#", 60),
+            // Sem rotulo e estreita: e so onde a roda gira enquanto a build
+            // corre. Uma coluna com titulo pediria uma explicacao que a propria
+            // animacao ja da.
+            TextColumn("", 34),
+            TextColumn("#", 56),
             TextColumn("Projeto", 120),
             TextColumn("Resultado", 110),
             TextColumn("Quando", 110),
             TextColumn("Duração", 90),
             MonoColumn("Commit", 90),
             TextColumn("Autor", 130),
-            TextColumn("Erro", 320));
+            TextColumn("Erro", 320),
+            TextColumn("", 44));
 
-        PaintStatusColumn(_buildsGrid, statusColumn: 2);
-        StretchLastColumn(_buildsGrid);
+        PaintStatusColumn(_buildsGrid, statusColumn: ColunaDoResultado);
+        PaintSpinnerColumn(_buildsGrid);
+        PaintActionColumn(_buildsGrid);
+
+        // A coluna larga e a do erro, e nao a ultima: a ultima agora e a dos
+        // botoes de cada linha, e ela tem largura fixa.
+        _buildsGrid.Columns[ColunaDoErro].AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
+        _buildsGrid.Columns[ColunaDoErro].MinimumWidth = 110;
+
         _buildsGrid.SelectionChanged += (_, _) => ShowSelectedBuildLog();
+        _buildsGrid.CellClick += (_, e) => OnBuildsGridClick(e);
+
+        // A roda so gira quando ha o que girar: sem build em execucao o timer
+        // fica parado, e uma janela aberta o dia inteiro nao repinta a toa.
+        _spinner.Interval = 90;
+        _spinner.Tick += (_, _) =>
+        {
+            _anguloDaRoda = (_anguloDaRoda + 24f) % 360f;
+            InvalidateSpinnerCells();
+        };
 
         var split = new SplitContainer
         {
@@ -394,6 +438,9 @@ public sealed class MainForm : Form
                     .Take(200)
                     .Select(b => new[]
                     {
+                        // A primeira e a ultima ficam vazias: quem desenha nelas
+                        // e a roda e o botao da linha, nao um valor.
+                        "",
                         b.Id.ToString(),
                         b.Project,
                         StatusFormatter.Label(b.Status),
@@ -402,8 +449,11 @@ public sealed class MainForm : Form
                         b.ShortSha,
                         b.CommitAuthor ?? "—",
                         FirstLine(b.ErrorSummary),
+                        "",
                     })
-                    .ToList(), statusColumn: 2);
+                    .ToList(), statusColumn: ColunaDoResultado);
+
+                AtualizarRoda();
 
                 // A grade seleciona a primeira linha assim que ela e criada,
                 // antes de as celulas terem valor: naquele instante nao havia id
@@ -506,6 +556,88 @@ public sealed class MainForm : Form
         };
     }
 
+    /// <summary>
+    /// A roda girando na primeira coluna, so na linha da build em execucao.
+    ///
+    /// E o unico elemento da tela que se mexe, de proposito: e ele que separa
+    /// "esta acontecendo agora" de "aconteceu", sem precisar ler nada.
+    /// </summary>
+    private void PaintSpinnerColumn(DataGridView grid)
+        => grid.CellPainting += (_, e) =>
+        {
+            if (e.RowIndex < 0 || e.ColumnIndex != ColunaDaRoda || e.Graphics is null) return;
+
+            e.PaintBackground(e.CellBounds, true);
+
+            if (EmExecucao(grid.Rows[e.RowIndex]))
+                UiKit.Spinner(e.Graphics, e.CellBounds, Theme.AccentHover, _anguloDaRoda);
+
+            e.Handled = true;
+        };
+
+    /// <summary>
+    /// A ultima coluna: lixeira no que ja terminou, quadrado de parar no que
+    /// esta correndo.
+    ///
+    /// Sao acoes diferentes no mesmo lugar porque sao a mesma pergunta — "quero
+    /// que esta linha pare de existir" —, e porque uma build viva nao pode ser
+    /// apagada: o pipeline ainda vai escrever nela.
+    /// </summary>
+    private void PaintActionColumn(DataGridView grid)
+        => grid.CellPainting += (_, e) =>
+        {
+            if (e.RowIndex < 0 || e.ColumnIndex != ColunaDaAcao || e.Graphics is null) return;
+
+            e.PaintBackground(e.CellBounds, true);
+
+            var area = new Rectangle(
+                e.CellBounds.X + (e.CellBounds.Width - 16) / 2,
+                e.CellBounds.Y + (e.CellBounds.Height - 16) / 2,
+                16, 16);
+
+            if (EmExecucao(grid.Rows[e.RowIndex])) UiKit.StopGlyph(e.Graphics, area, Theme.Danger);
+            else UiKit.TrashGlyph(e.Graphics, area, Theme.TextFaint);
+
+            e.Handled = true;
+        };
+
+    private static bool EmExecucao(DataGridViewRow linha)
+        => linha.Cells[ColunaDoResultado].Value as string == RunningLabel;
+
+    /// <summary>
+    /// Liga o timer da roda so quando ha build correndo. Uma janela aberta o dia
+    /// inteiro nao pode repintar dez vezes por segundo para nao mostrar nada.
+    /// </summary>
+    private void AtualizarRoda()
+    {
+        var precisa = false;
+        foreach (DataGridViewRow linha in _buildsGrid.Rows)
+            if (EmExecucao(linha)) { precisa = true; break; }
+
+        if (precisa == _spinner.Enabled) return;
+
+        if (precisa) _spinner.Start();
+        else { _spinner.Stop(); _buildsGrid.Invalidate(); }
+    }
+
+    private void InvalidateSpinnerCells()
+    {
+        for (var r = 0; r < _buildsGrid.Rows.Count; r++)
+            if (EmExecucao(_buildsGrid.Rows[r]))
+                _buildsGrid.InvalidateCell(ColunaDaRoda, r);
+    }
+
+    private void OnBuildsGridClick(DataGridViewCellEventArgs e)
+    {
+        if (e.RowIndex < 0 || e.ColumnIndex != ColunaDaAcao) return;
+
+        var linha = _buildsGrid.Rows[e.RowIndex];
+        if (linha.Cells[ColunaDoId].Value is not string texto || !long.TryParse(texto, out var id)) return;
+
+        if (EmExecucao(linha)) CancelBuild(id, linha.Cells[ColunaDoProjeto].Value as string);
+        else DeleteBuild(id);
+    }
+
     private static Color StatusColor(string? label) => label switch
     {
         "SUCESSO" => Theme.Success,
@@ -529,7 +661,7 @@ public sealed class MainForm : Form
             linha.Selected = true;
         }
 
-        if (linha?.Cells[0].Value is not string idText || !long.TryParse(idText, out var id))
+        if (linha?.Cells[ColunaDoId].Value is not string idText || !long.TryParse(idText, out var id))
             return;
 
         if (_selectedBuildId == id) return;
@@ -537,7 +669,7 @@ public sealed class MainForm : Form
 
         // De qual build e o log que esta embaixo. Sem isto, trocar de linha
         // troca o conteudo do painel sem nada dizer que trocou.
-        var projeto = linha.Cells[1].Value as string;
+        var projeto = linha.Cells[ColunaDoProjeto].Value as string;
         _buildLogTitle.Text = $"Log da build #{id}" + (projeto is null ? "" : " · " + projeto);
 
         var services = _controller.Services;
@@ -694,16 +826,32 @@ public sealed class MainForm : Form
         };
 
         var direita = "";
-        if (_controller.State == HostState.Rodando && _controller.Services is not null)
+        var rodando = _controller.State == HostState.Rodando;
+        var pausada = false;
+
+        if (rodando && _controller.Services is not null)
         {
             var snapshot = _controller.Services.GetRequiredService<IBuildScheduler>().Snapshot();
+            pausada = snapshot.Paused;
+
             direita = $"fila {snapshot.Waiting}   ·   em execução {snapshot.Running} de {snapshot.MaxConcurrentBuilds}";
+            if (pausada) direita += "   ·   fila pausada";
         }
+
+        // A fila pausada nao muda o estado do servico: ele continua observando
+        // os repositorios e enfileirando. Por isso ela aparece na direita, junto
+        // dos numeros da fila, e nao no lugar de "Servico em execucao".
+        if (pausada) cor = Theme.Warning;
 
         _status.Set(texto, cor, direita);
 
-        _buildNow.Enabled = _controller.State == HostState.Rodando;
-        _republish.Enabled = _controller.State == HostState.Rodando;
+        _pausarFila.Text = pausada ? "Retomar fila" : "Pausar fila";
+
+        _buildNow.Enabled = rodando;
+        _republish.Enabled = rodando;
+        _pausarFila.Enabled = rodando;
+        _cancelarBuild.Enabled = rodando;
+        _limparHistorico.Enabled = rodando;
     }
 
     private void LoadServiceLog()
@@ -873,6 +1021,155 @@ public sealed class MainForm : Form
         if (string.IsNullOrWhiteSpace(text)) return "";
         var index = text.IndexOf('\n');
         return (index >= 0 ? text[..index] : text).Trim();
+    }
+
+    // ------------------------------------------------------- acoes das builds
+
+    /// <summary>
+    /// Encerra a build que esta correndo.
+    ///
+    /// Pede confirmacao porque uma build de WebGL leva quinze minutos e nao ha
+    /// como desfazer — e porque o botao fica a um clique de distancia da
+    /// lixeira, que faz outra coisa.
+    /// </summary>
+    private void CancelBuild(long id, string? projeto)
+    {
+        var alvo = projeto is null ? $"a build #{id}" : $"a build #{id} de {projeto}";
+
+        var resposta = MessageBox.Show(
+            this,
+            $"Cancelar {alvo}?" + Environment.NewLine + Environment.NewLine +
+            "O Unity é encerrado junto, com os processos filhos. Nada é publicado, e a build fica " +
+            "no histórico como Cancelada.",
+            AppNames.Display, MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+
+        if (resposta != DialogResult.Yes) return;
+
+        if (_controller.Services?.GetService<IBuildScheduler>() is not { } scheduler)
+        {
+            Warn("O serviço não está em execução.");
+            return;
+        }
+
+        if (!scheduler.Cancel(id))
+        {
+            // Terminou entre o clique e o cancelamento. Nao e erro, mas quem
+            // clicou precisa saber por que nada aconteceu.
+            Inform($"A build #{id} já havia terminado.");
+        }
+
+        RefreshData();
+    }
+
+    private void CancelRunningBuild()
+    {
+        foreach (DataGridViewRow linha in _buildsGrid.Rows)
+        {
+            if (!EmExecucao(linha)) continue;
+            if (linha.Cells[ColunaDoId].Value is not string texto || !long.TryParse(texto, out var id)) continue;
+
+            CancelBuild(id, linha.Cells[ColunaDoProjeto].Value as string);
+            return;
+        }
+
+        Inform("Nenhuma build em execução.");
+    }
+
+    private void DeleteBuild(long id)
+    {
+        var store = _controller.Services?.GetService<IBuildStore>();
+        if (store is null)
+        {
+            Warn("O serviço precisa estar em execução para mexer no histórico.");
+            return;
+        }
+
+        _ = ApagarAsync();
+
+        async Task ApagarAsync()
+        {
+            try
+            {
+                var saiu = await store.DeleteAsync(id, default);
+                BeginInvoke(() =>
+                {
+                    if (!saiu) Inform($"A build #{id} está em execução ou na fila: ela sai do histórico quando terminar.");
+                    RefreshData();
+                });
+            }
+            catch (Exception exception) when (exception is IOException or InvalidOperationException)
+            {
+                BeginInvoke(() => Warn("Não foi possível apagar: " + exception.Message));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Limpa o historico inteiro, menos o que ainda esta vivo.
+    ///
+    /// So o registro sai. O log de cada build continua em disco e o zip
+    /// publicado continua na pasta de destino: quem limpa a tela quer a tela
+    /// limpa, nao quer perder o artefato que o time esta usando.
+    /// </summary>
+    private void ClearHistory()
+    {
+        var store = _controller.Services?.GetService<IBuildStore>();
+        if (store is null)
+        {
+            Warn("O serviço precisa estar em execução para mexer no histórico.");
+            return;
+        }
+
+        var resposta = MessageBox.Show(
+            this,
+            "Apagar do histórico todas as builds que já terminaram?" + Environment.NewLine + Environment.NewLine +
+            "O que está em execução ou na fila fica. Os logs em disco e os artefatos já publicados " +
+            "não são tocados.",
+            AppNames.Display, MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+
+        if (resposta != DialogResult.Yes) return;
+
+        _ = LimparAsync();
+
+        async Task LimparAsync()
+        {
+            try
+            {
+                var quantas = await store.DeleteFinishedAsync(null, default);
+                BeginInvoke(() =>
+                {
+                    _selectedBuildId = null;
+                    _buildLog.Limpar();
+                    _buildLogTitle.Text = "Log da build";
+                    RefreshData();
+                    Inform($"{quantas} build(s) saíram do histórico.");
+                });
+            }
+            catch (Exception exception) when (exception is IOException or InvalidOperationException)
+            {
+                BeginInvoke(() => Warn("Não foi possível limpar: " + exception.Message));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Segura a fila, sem tocar na build que ja esta correndo.
+    ///
+    /// Congelar o Unity no meio de uma importacao seria o que a palavra "pausar"
+    /// sugere, e e justamente o que nao se pode fazer: ele fica com o lock da
+    /// Library na mao e o cache azeda. O que da para segurar — e o que costuma
+    /// ser o pedido de verdade — e a proxima.
+    /// </summary>
+    private void TogglePause()
+    {
+        if (_controller.Services?.GetService<IBuildScheduler>() is not { } scheduler)
+        {
+            Warn("O serviço não está em execução.");
+            return;
+        }
+
+        scheduler.Paused = !scheduler.Paused;
+        UpdateStatus();
     }
 
     private void Warn(string message)

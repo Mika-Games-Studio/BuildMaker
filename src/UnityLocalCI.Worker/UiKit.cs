@@ -70,6 +70,76 @@ internal static class UiKit
 
         g.SmoothingMode = modo;
     }
+
+    /// <summary>
+    /// A roda que gira enquanto a build corre.
+    ///
+    /// Um rotulo que diz "EM EXECUCAO" fica igual aos dois minutos e aos vinte;
+    /// o que responde "esta andando ou travou?" e uma coisa que se mexe. E um
+    /// arco de 300 graus, e nao um circulo inteiro, porque um circulo girando
+    /// nao parece girar.
+    /// </summary>
+    public static void Spinner(Graphics g, Rectangle bounds, Color cor, float angulo)
+    {
+        const int lado = 14;
+
+        var caixa = new Rectangle(
+            bounds.X + (bounds.Width - lado) / 2,
+            bounds.Y + (bounds.Height - lado) / 2,
+            lado, lado);
+
+        var modo = g.SmoothingMode;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+
+        using (var trilho = new Pen(Theme.Blend(Theme.Surface, cor, 0.25), 2f))
+            g.DrawEllipse(trilho, caixa);
+
+        using (var caneta = new Pen(cor, 2f) { StartCap = LineCap.Round, EndCap = LineCap.Round })
+            g.DrawArc(caneta, caixa, angulo, 300f * 0.3f);
+
+        g.SmoothingMode = modo;
+    }
+
+    /// <summary>
+    /// Lixeira: tampa, corpo e duas ripas. Desenhada e nao vinda de uma fonte de
+    /// simbolos, pelo mesmo motivo dos icones da navegacao — fonte de icone que
+    /// nao existe na maquina vira quadradinho.
+    /// </summary>
+    public static void TrashGlyph(Graphics g, Rectangle r, Color cor)
+    {
+        var modo = g.SmoothingMode;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+
+        using var caneta = new Pen(cor, 1.5f) { StartCap = LineCap.Round, EndCap = LineCap.Round };
+
+        var meio = r.X + r.Width / 2;
+
+        // Tampa e cabo.
+        g.DrawLine(caneta, r.X + 1, r.Y + 4, r.Right - 1, r.Y + 4);
+        g.DrawLine(caneta, meio - 3, r.Y + 4, meio - 3, r.Y + 2);
+        g.DrawLine(caneta, meio + 3, r.Y + 4, meio + 3, r.Y + 2);
+        g.DrawLine(caneta, meio - 3, r.Y + 2, meio + 3, r.Y + 2);
+
+        // Corpo.
+        g.DrawLine(caneta, r.X + 3, r.Y + 5, r.X + 4, r.Bottom - 2);
+        g.DrawLine(caneta, r.Right - 3, r.Y + 5, r.Right - 4, r.Bottom - 2);
+        g.DrawLine(caneta, r.X + 4, r.Bottom - 2, r.Right - 4, r.Bottom - 2);
+
+        // Ripas.
+        g.DrawLine(caneta, meio - 2, r.Y + 7, meio - 2, r.Bottom - 5);
+        g.DrawLine(caneta, meio + 2, r.Y + 7, meio + 2, r.Bottom - 5);
+
+        g.SmoothingMode = modo;
+    }
+
+    /// <summary>Quadrado cheio, o simbolo universal de parar.</summary>
+    public static void StopGlyph(Graphics g, Rectangle r, Color cor)
+    {
+        var lado = Math.Min(r.Width, r.Height) - 5;
+        var caixa = new Rectangle(r.X + (r.Width - lado) / 2, r.Y + (r.Height - lado) / 2, lado, lado);
+
+        Theme.FillRounded(g, caixa, cor, 2f);
+    }
 }
 
 // ---------------------------------------------------------------------- cartao

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -29,7 +30,13 @@ public sealed class BuildScheduler : BackgroundService, IBuildScheduler
     private readonly int _maxConcurrentBuilds;
     private readonly TimeSpan _resourceRecheck;
 
+    private readonly ConcurrentDictionary<long, CancellationTokenSource> _emAndamento = new();
+
+    /// <summary>Builds que quem esta na janela mandou parar.</summary>
+    private readonly ConcurrentDictionary<long, byte> _canceladas = new();
+
     private int _running;
+    private volatile bool _pausada;
 
     public BuildScheduler(
         IServiceScopeFactory scopeFactory,
@@ -68,7 +75,7 @@ public sealed class BuildScheduler : BackgroundService, IBuildScheduler
     }
 
     public SchedulerSnapshot Snapshot()
-        => new(_queues.Values.Count(q => q.HasPending), Volatile.Read(ref _running), _maxConcurrentBuilds);
+        => new(_queues.Values.Count(q => q.HasPending), Volatile.Read(ref _running), _maxConcurrentBuilds, _pausada);
 
     public async Task<long?> EnqueueAsync(
         ResolvedProject project, CommitInfo commit, BuildTrigger trigger, CancellationToken ct)
@@ -131,6 +138,7 @@ public sealed class BuildScheduler : BackgroundService, IBuildScheduler
             try
             {
                 await queue.WaitForPendingAsync(stoppingToken).ConfigureAwait(false);
+                await WaitForResumeAsync(stoppingToken).ConfigureAwait(false);
                 await WaitForResourcesAsync(queue, stoppingToken).ConfigureAwait(false);
 
                 await _globalSlots.WaitAsync(stoppingToken).ConfigureAwait(false);
@@ -215,12 +223,65 @@ public sealed class BuildScheduler : BackgroundService, IBuildScheduler
         }
     }
 
+    /// <summary>
+    /// Segura o consumidor enquanto a fila estiver pausada.
+    ///
+    /// A espera e ativa de meio em meio segundo, e nao por evento, de proposito:
+    /// pausar e retomar acontecem uma vez por dia, e meio segundo de atraso ao
+    /// retomar custa menos que um sinal a mais para manter certo.
+    /// </summary>
+    private async Task WaitForResumeAsync(CancellationToken ct)
+    {
+        var avisou = false;
+
+        while (_pausada && !ct.IsCancellationRequested)
+        {
+            if (!avisou)
+            {
+                _logger.LogInformation("Fila pausada: nenhuma build nova comeca ate ser retomada.");
+                avisou = true;
+            }
+
+            await _clock.Delay(TimeSpan.FromMilliseconds(500), ct).ConfigureAwait(false);
+        }
+    }
+
+    public bool Paused
+    {
+        get => _pausada;
+        set
+        {
+            if (_pausada == value) return;
+
+            _pausada = value;
+            _logger.LogInformation(value ? "Fila pausada." : "Fila retomada.");
+        }
+    }
+
+    public bool Cancel(long buildId)
+    {
+        if (!_emAndamento.TryGetValue(buildId, out var cts)) return false;
+
+        _canceladas[buildId] = 0;
+        _logger.LogWarning("Build {BuildId} cancelada pela janela.", buildId);
+
+        // Cancel lanca se o proprio source ja foi descartado — o que acontece
+        // quando a build termina no meio deste caminho. Nao e erro: e a build
+        // tendo ganhado a corrida.
+        try { cts.Cancel(); }
+        catch (ObjectDisposedException) { return false; }
+
+        return true;
+    }
+
     private async Task RunJobAsync(BuildJob job, CancellationToken stoppingToken)
     {
         // Escopo de DI e CancellationTokenSource proprios: timeout ou travamento
         // de um projeto nao pode alcancar os demais.
         using var scope = _scopeFactory.CreateScope();
         using var buildCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+
+        _emAndamento[job.BuildId] = buildCts;
 
         var runner = scope.ServiceProvider.GetRequiredService<IBuildRunner>();
 
@@ -241,12 +302,37 @@ public sealed class BuildScheduler : BackgroundService, IBuildScheduler
                     job.Project.Name, job.BuildId);
                 throw;
             }
+            catch (OperationCanceledException) when (_canceladas.ContainsKey(job.BuildId))
+            {
+                // Cancelamento pedido na janela: o pipeline ja fechou o registro
+                // como Interrompida, que e o que ele sabia na hora. Aqui a gente
+                // sabe mais — e "cancelada" e a palavra honesta.
+                await MarkCancelledByUserAsync(job, CancellationToken.None).ConfigureAwait(false);
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "[{Project}] build {BuildId} falhou de forma inesperada.",
                     job.Project.Name, job.BuildId);
             }
+            finally
+            {
+                _emAndamento.TryRemove(job.BuildId, out _);
+                _canceladas.TryRemove(job.BuildId, out _);
+            }
         }
+    }
+
+    private async Task MarkCancelledByUserAsync(BuildJob job, CancellationToken ct)
+    {
+        var record = await _store.GetAsync(job.BuildId, ct).ConfigureAwait(false);
+        if (record is null) return;
+
+        await _store.UpdateAsync(record with
+        {
+            Status = BuildStatus.Cancelled,
+            FinishedAt = record.FinishedAt ?? _clock.UtcNow,
+            ErrorSummary = "Cancelada na janela.",
+        }, ct).ConfigureAwait(false);
     }
 
     private async Task MarkCancelledAsync(BuildJob job, CancellationToken ct)

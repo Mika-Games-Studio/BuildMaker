@@ -159,6 +159,39 @@ public sealed class SqliteBuildStore : IBuildStore
         return await reader.ReadAsync(ct).ConfigureAwait(false) ? Map(reader) : null;
     }
 
+    /// <summary>
+    /// A condicao de status esta no proprio DELETE, e nao num SELECT antes: com
+    /// duas idas ao banco, uma build podia comecar entre a checagem e a exclusao
+    /// e o registro dela sumia debaixo do pipeline.
+    /// </summary>
+    public async Task<bool> DeleteAsync(long id, CancellationToken ct)
+    {
+        await using var connection = await OpenAsync(ct).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM builds WHERE id = $id AND status NOT IN ($queued, $running);";
+        command.Parameters.AddWithValue("$id", id);
+        command.Parameters.AddWithValue("$queued", BuildStatus.Queued.ToString());
+        command.Parameters.AddWithValue("$running", BuildStatus.Running.ToString());
+
+        return await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false) > 0;
+    }
+
+    public async Task<int> DeleteFinishedAsync(string? project, CancellationToken ct)
+    {
+        await using var connection = await OpenAsync(ct).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            DELETE FROM builds
+            WHERE status NOT IN ($queued, $running)
+              AND ($project IS NULL OR project = $project);
+            """;
+        command.Parameters.AddWithValue("$queued", BuildStatus.Queued.ToString());
+        command.Parameters.AddWithValue("$running", BuildStatus.Running.ToString());
+        command.Parameters.AddWithValue("$project", (object?)project ?? DBNull.Value);
+
+        return await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
     public async Task<string?> GetWatcherValueAsync(string project, string field, CancellationToken ct)
     {
         await using var connection = await OpenAsync(ct).ConfigureAwait(false);

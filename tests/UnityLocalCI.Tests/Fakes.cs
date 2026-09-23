@@ -117,6 +117,13 @@ public sealed class RecordingScheduler : IBuildScheduler
     }
 
     public SchedulerSnapshot Snapshot() => new(0, 0, 1);
+
+    public bool Cancel(long buildId) => Cancelled.Add(buildId);
+
+    /// <summary>Ids que alguem mandou cancelar.</summary>
+    public HashSet<long> Cancelled { get; } = [];
+
+    public bool Paused { get; set; }
 }
 
 public static class TestProjects

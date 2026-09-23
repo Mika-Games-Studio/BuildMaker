@@ -262,6 +262,10 @@ public sealed class BlockingSnapshotScheduler : IBuildScheduler
         ResolvedProject project, UnityLocalCI.Core.Git.CommitInfo commit, BuildTrigger trigger, CancellationToken ct)
         => Task.FromResult<long?>(1);
 
+    public bool Cancel(long buildId) => false;
+
+    public bool Paused { get; set; }
+
     public SchedulerSnapshot Snapshot()
     {
         if (Interlocked.Exchange(ref _blockNext, 0) == 1)
@@ -281,6 +285,10 @@ public sealed class StubSnapshotScheduler : IBuildScheduler
     public Task<long?> EnqueueAsync(
         ResolvedProject project, UnityLocalCI.Core.Git.CommitInfo commit, BuildTrigger trigger, CancellationToken ct)
         => Task.FromResult<long?>(1);
+
+    public bool Cancel(long buildId) => false;
+
+    public bool Paused { get; set; }
 
     public SchedulerSnapshot Snapshot() => Result;
 }

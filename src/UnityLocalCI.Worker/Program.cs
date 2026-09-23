@@ -97,6 +97,8 @@ internal static class Program
         var configPath = ConfigFile.DefaultPath;
         var controller = new HostController(liveLog, configPath);
 
+        RegistrarEncerramento(controller.Arquivo);
+
         using var form = new MainForm(controller, liveLog, configPath);
         using var tray = new TrayPresence(form, controller);
         form.Tray = tray;
@@ -118,5 +120,34 @@ internal static class Program
         return Task.Run(async () => await controller.DisposeAsync()).Wait(TimeSpan.FromSeconds(20))
             ? 0
             : 1;
+    }
+
+    /// <summary>
+    /// Registra no log por que o programa esta encerrando.
+    ///
+    /// Um CI que fecha sozinho no meio de uma build de quinze minutos e o pior
+    /// defeito possivel aqui, e ate agora ele nao deixava rastro: sem log em
+    /// arquivo, a unica evidencia era a build seguinte dizendo "Interrompida
+    /// por reinicializacao". Estas quatro linhas transformam "o app fechou" em
+    /// uma frase com causa.
+    /// </summary>
+    private static void RegistrarEncerramento(FileLog arquivo)
+    {
+        void Anotar(string o_que) => arquivo.Write($"{DateTime.Now:HH:mm:ss}  ENC  {"Encerramento",-22}  {o_que}");
+
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+            Anotar($"excecao nao tratada (encerrando: {e.IsTerminating}): {e.ExceptionObject}");
+
+        // Excecao na thread da janela. O WinForms mostraria uma caixa de dialogo
+        // e seguiria; registrar antes e o que permite saber que ela existiu.
+        Application.ThreadException += (_, e) =>
+            Anotar($"excecao na thread da janela: {e.Exception}");
+
+        TaskScheduler.UnobservedTaskException += (_, e) =>
+            Anotar($"tarefa com excecao sem dono: {e.Exception}");
+
+        Application.ApplicationExit += (_, _) => Anotar("laco de mensagens encerrado (Application.Exit ou janela fechada)");
+
+        AppDomain.CurrentDomain.ProcessExit += (_, _) => Anotar("processo saindo");
     }
 }
