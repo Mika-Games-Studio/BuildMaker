@@ -22,7 +22,6 @@ param(
     [string]$Destino = (Join-Path $env:LOCALAPPDATA 'UnityLocalCI'),
     [switch]$SemAtalhos,
     [switch]$SemInicioAutomatico,
-    [switch]$NaoAbrir,
     [switch]$Desinstalar
 )
 
@@ -246,8 +245,16 @@ Write-Host "Para sair de verdade, botao direito no icone da bandeja e Sair."
 Write-Host ""
 Write-Host "Para desinstalar:  instalar.ps1 -Desinstalar"
 
-if (-not $NaoAbrir) {
-    Start-Process $exe
-    Write-Host ""
-    Write-Host "App iniciado." -ForegroundColor Green
-}
+# O instalador nao abre o programa.
+#
+# Ele abria, com Start-Process, e o antivirus corporativo passou a marcar a
+# relacao: um executavel sem assinatura de fornecedor iniciado pelo
+# powershell.exe e um padrao que o Behavior Monitoring do Apex One registra e
+# bloqueia ("Detectado programa recem-encontrado"). Aberto pelo atalho, quem
+# inicia e o Explorer, que e como um programa de area de trabalho comeca.
+#
+# Nada aqui engana o antivirus: o executavel e o mesmo, no mesmo lugar. O que
+# muda e o instalador parar de lancar o programa de um jeito que nenhum
+# instalador de verdade usa.
+Write-Host ""
+Write-Host "Abra o BuildMaker pelo atalho da area de trabalho ou do menu Iniciar."
