@@ -75,4 +75,61 @@ public class ProjectQueueTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => queue.WaitForPendingAsync(cts.Token));
     }
+[Fact]
+    public void Tirar_da_fila_o_job_que_ainda_nao_comecou()
+    {
+        var queue = new ProjectQueue("Crash");
+        queue.Enqueue(Job(1, 'a'));
+
+        var removido = queue.Remove(1);
+
+        Assert.NotNull(removido);
+        Assert.Equal(1, removido!.BuildId);
+        Assert.False(queue.HasPending);
+        Assert.Null(queue.Take());
+    }
+
+    /// <summary>
+    /// A corrida normal: entre o clique na lixeira e o Remove, o consumidor
+    /// retirou o job para executar. Aqui nao ha mais o que tirar da fila, e
+    /// quem chama tenta o cancelamento da build em execucao.
+    /// </summary>
+    [Fact]
+    public void Job_que_ja_saiu_para_executar_nao_e_encontrado_na_fila()
+    {
+        var queue = new ProjectQueue("Crash");
+        queue.Enqueue(Job(1, 'a'));
+        queue.Take();
+
+        Assert.Null(queue.Remove(1));
+    }
+
+    [Fact]
+    public void Tirar_da_fila_nao_toca_num_job_de_outro_id()
+    {
+        var queue = new ProjectQueue("Crash");
+        queue.Enqueue(Job(7, 'a'));
+
+        Assert.Null(queue.Remove(8));
+        Assert.Equal(7, queue.Peek()!.BuildId);
+    }
+
+    /// <summary>
+    /// Depois de esvaziar a fila pela lixeira, um commit novo tem de voltar a
+    /// acordar o consumidor. Sem isso o projeto ficaria parado para sempre.
+    /// </summary>
+    [Fact]
+    public async Task Depois_de_tirar_da_fila_um_job_novo_ainda_sinaliza()
+    {
+        var queue = new ProjectQueue("Crash");
+        queue.Enqueue(Job(1, 'a'));
+        queue.Remove(1);
+
+        queue.Enqueue(Job(2, 'b'));
+
+        using var prazo = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await queue.WaitForPendingAsync(prazo.Token);
+
+        Assert.Equal(2, queue.Take()!.BuildId);
+    }
 }

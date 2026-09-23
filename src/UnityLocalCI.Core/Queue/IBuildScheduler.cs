@@ -14,13 +14,17 @@ public interface IBuildScheduler
     SchedulerSnapshot Snapshot();
 
     /// <summary>
-    /// Encerra a build em andamento. Verdadeiro se ela existia e foi avisada.
+    /// Cancela uma build, esteja ela correndo ou esperando na fila. Verdadeiro
+    /// se ela existia num dos dois lugares.
     ///
-    /// O Unity morre junto, com os filhos: o pipeline ja trata o cancelamento
-    /// como um encerramento normal, entao o workspace nao fica com processo
-    /// solto segurando a Library.
+    /// Em execucao, o Unity morre junto com os filhos — o pipeline trata o
+    /// cancelamento como encerramento normal, entao nao sobra processo segurando
+    /// a Library. Na fila, ela simplesmente nao chega a comecar.
+    ///
+    /// Nos dois casos a build fica no historico como Cancelada: ela foi pedida,
+    /// e some-la sem deixar rastro esconderia que alguem mandou parar.
     /// </summary>
-    bool Cancel(long buildId);
+    Task<bool> CancelAsync(long buildId, CancellationToken ct);
 
     /// <summary>
     /// Segura a fila. A build que ja esta correndo segue ate o fim — Unity no

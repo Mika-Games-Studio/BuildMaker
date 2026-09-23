@@ -118,7 +118,7 @@ public sealed class RecordingScheduler : IBuildScheduler
 
     public SchedulerSnapshot Snapshot() => new(0, 0, 1);
 
-    public bool Cancel(long buildId) => Cancelled.Add(buildId);
+    public Task<bool> CancelAsync(long buildId, CancellationToken ct) => Task.FromResult(Cancelled.Add(buildId));
 
     /// <summary>Ids que alguem mandou cancelar.</summary>
     public HashSet<long> Cancelled { get; } = [];

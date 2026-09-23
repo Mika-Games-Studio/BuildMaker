@@ -523,6 +523,9 @@ public sealed class MainForm : Form
     /// <summary>O projeto cuja build esta correndo agora.</summary>
     private const string RunningLabel = "EM EXECUÇÃO";
 
+    /// <summary>A build que ja foi pedida e espera a vez.</summary>
+    private const string QueuedLabel = "NA FILA";
+
     /// <summary>O projeto que existe na configuracao mas o servico nao observa.</summary>
     private const string DisabledLabel = "DESLIGADO";
 
@@ -605,6 +608,14 @@ public sealed class MainForm : Form
         => linha.Cells[ColunaDoResultado].Value as string == RunningLabel;
 
     /// <summary>
+    /// Esperando a vez. A lixeira nestas linhas tira da fila em vez de apagar do
+    /// historico: apagar o registro de uma build que ainda vai rodar deixaria o
+    /// pipeline escrevendo numa linha que nao existe mais.
+    /// </summary>
+    private static bool NaFila(DataGridViewRow linha)
+        => linha.Cells[ColunaDoResultado].Value as string == QueuedLabel;
+
+    /// <summary>
     /// Liga o timer da roda so quando ha build correndo. Uma janela aberta o dia
     /// inteiro nao pode repintar dez vezes por segundo para nao mostrar nada.
     /// </summary>
@@ -634,7 +645,13 @@ public sealed class MainForm : Form
         var linha = _buildsGrid.Rows[e.RowIndex];
         if (linha.Cells[ColunaDoId].Value is not string texto || !long.TryParse(texto, out var id)) return;
 
-        if (EmExecucao(linha)) CancelBuild(id, linha.Cells[ColunaDoProjeto].Value as string);
+        var correndo = EmExecucao(linha);
+
+        // A lixeira faz duas coisas parecidas: numa build que ainda nao comecou
+        // ela tira da fila; numa que ja terminou ela apaga do historico. O que
+        // nao faz e apagar o registro de uma build viva — o pipeline ainda vai
+        // escrever nele.
+        if (correndo || NaFila(linha)) CancelBuild(id, linha.Cells[ColunaDoProjeto].Value as string, correndo);
         else DeleteBuild(id);
     }
 
@@ -644,7 +661,7 @@ public sealed class MainForm : Form
         "FALHOU" => Theme.Danger,
         "INTERROMPIDA" or "CANCELADA" => Theme.Warning,
         RunningLabel => Theme.AccentHover,
-        "NA FILA" => Theme.Info,
+        QueuedLabel => Theme.Info,
         DisabledLabel => Theme.TextFaint,
         _ => Theme.TextMuted,
     };
@@ -1032,15 +1049,26 @@ public sealed class MainForm : Form
     /// como desfazer — e porque o botao fica a um clique de distancia da
     /// lixeira, que faz outra coisa.
     /// </summary>
-    private void CancelBuild(long id, string? projeto)
+    /// <param name="correndo">
+    /// Falso para a build que ainda esta esperando na fila. Sao dois pedidos
+    /// bem diferentes atras do mesmo clique — matar um Unity de quinze minutos
+    /// e tirar da fila algo que nem comecou —, e a pergunta precisa dizer qual
+    /// dos dois vai acontecer.
+    /// </param>
+    private void CancelBuild(long id, string? projeto, bool correndo)
     {
         var alvo = projeto is null ? $"a build #{id}" : $"a build #{id} de {projeto}";
 
+        var explicacao = correndo
+            ? "O Unity é encerrado junto, com os processos filhos. Nada é publicado, e a build fica " +
+              "no histórico como Cancelada."
+            : "Ela ainda não começou: sai da fila e fica no histórico como Cancelada. " +
+              "O próximo commit enfileira de novo.";
+
         var resposta = MessageBox.Show(
             this,
-            $"Cancelar {alvo}?" + Environment.NewLine + Environment.NewLine +
-            "O Unity é encerrado junto, com os processos filhos. Nada é publicado, e a build fica " +
-            "no histórico como Cancelada.",
+            $"{(correndo ? "Cancelar" : "Tirar da fila")} {alvo}?" + Environment.NewLine + Environment.NewLine +
+            explicacao,
             AppNames.Display, MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
 
         if (resposta != DialogResult.Yes) return;
@@ -1051,14 +1079,20 @@ public sealed class MainForm : Form
             return;
         }
 
-        if (!scheduler.Cancel(id))
-        {
-            // Terminou entre o clique e o cancelamento. Nao e erro, mas quem
-            // clicou precisa saber por que nada aconteceu.
-            Inform($"A build #{id} já havia terminado.");
-        }
+        _ = CancelarAsync();
 
-        RefreshData();
+        async Task CancelarAsync()
+        {
+            var cancelou = await scheduler.CancelAsync(id, default);
+
+            BeginInvoke(() =>
+            {
+                // Terminou ou comecou entre o clique e o cancelamento. Nao e
+                // erro, mas quem clicou precisa saber por que nada aconteceu.
+                if (!cancelou) Inform($"A build #{id} já não estava mais na fila nem em execução.");
+                RefreshData();
+            });
+        }
     }
 
     private void CancelRunningBuild()
@@ -1068,7 +1102,7 @@ public sealed class MainForm : Form
             if (!EmExecucao(linha)) continue;
             if (linha.Cells[ColunaDoId].Value is not string texto || !long.TryParse(texto, out var id)) continue;
 
-            CancelBuild(id, linha.Cells[ColunaDoProjeto].Value as string);
+            CancelBuild(id, linha.Cells[ColunaDoProjeto].Value as string, correndo: true);
             return;
         }
 
