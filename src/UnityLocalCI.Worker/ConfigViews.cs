@@ -76,15 +76,6 @@ public sealed class GeneralView(CiOptions options)
 
     // --------------------------------------------------------------- arquivos
 
-    [Category("ARQUIVOS DE STATUS")]
-    [Description("Arquivo único com uma linha por projeto. É o que responde \"a build saiu?\" sem abrir nada.")]
-    [Editor(typeof(FilePathEditor), typeof(UITypeEditor))]
-    public string? GlobalStatusFile
-    {
-        get => _scheduler.GlobalStatusFile;
-        set => _scheduler.GlobalStatusFile = Texto.OuNulo(value);
-    }
-
     [Category("ESTADO E LOGS")]
     [Description("Banco SQLite com o histórico das builds. Apagá-lo perde o histórico, não as builds.")]
     [Editor(typeof(FilePathEditor), typeof(UITypeEditor))]
@@ -95,6 +86,24 @@ public sealed class GeneralView(CiOptions options)
     }
 
     // ------------------------------------------------------ padroes herdados
+
+    /// <summary>
+    /// A pasta de destino, para todos os projetos.
+    ///
+    /// Era por projeto e virou uma so. Cada zip ja carrega o nome do projeto, a
+    /// branch, a data e o commit no proprio nome, entao separar por pasta nao
+    /// acrescentava nada — e obrigava a preencher o mesmo caminho a cada projeto
+    /// novo, com a chance de um deles ficar apontando para outro lugar sem
+    /// ninguem perceber.
+    /// </summary>
+    [Category("PADRÕES DOS PROJETOS")]
+    [Description("Pasta onde o time pega os zips, de todos os projetos. É a interface para quem só quer o artefato.")]
+    [Editor(typeof(FolderPathEditor), typeof(UITypeEditor))]
+    public string? ArtifactFolder
+    {
+        get => _publishing.ArtifactFolder;
+        set => _publishing.ArtifactFolder = Texto.OuNulo(value);
+    }
 
     [Category("PADRÕES DOS PROJETOS")]
     [Description("Pasta de trabalho onde o zip é montado antes de ser copiado para o destino.")]
@@ -424,14 +433,8 @@ public sealed class ProjectView
         }
     }
 
-    [Category("PUBLICAÇÃO")]
-    [Description("Pasta onde o time pega o zip. É a interface para quem só quer o artefato.")]
-    [Editor(typeof(FolderPathEditor), typeof(UITypeEditor))]
-    public string? ArtifactFolder
-    {
-        get => _publishing.ArtifactFolder;
-        set => _publishing.ArtifactFolder = Texto.OuNulo(value);
-    }
+    // A pasta de destino nao aparece aqui: ela e uma so, para todos os projetos,
+    // e vive na aba Geral. Ver GeneralView.ArtifactFolder.
 
     [Category("PUBLICAÇÃO")]
     [Description("Tocar este arquivo enfileira uma build do HEAD atual. O serviço o apaga ao consumir.")]

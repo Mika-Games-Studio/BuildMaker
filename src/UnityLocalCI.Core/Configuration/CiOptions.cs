@@ -38,7 +38,6 @@ public sealed class SchedulerOptions
     /// <summary>RAM fisica livre minima para uma build tomar vaga no semaforo. Abaixo disso o job e adiado, nunca descartado.</summary>
     public int MinFreeRamGb { get; set; } = 12;
 
-    public string? GlobalStatusFile { get; set; }
 
     /// <summary>Intervalo de reavaliacao quando um job esta adiado por falta de recurso.</summary>
     public int ResourceRecheckSeconds { get; set; } = 30;

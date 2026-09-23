@@ -49,11 +49,16 @@ public sealed class GlobalStatusWriter : IGlobalStatusWriter
     {
         var configuration = _options.CurrentValue;
 
-        // Sem configuracao, o lugar padrao: este arquivo nao depende mais de um
-        // compartilhamento existir, entao nao ha motivo para ele deixar de sair.
-        var path = string.IsNullOrWhiteSpace(configuration.Scheduler.GlobalStatusFile)
-            ? AppPaths.DefaultGlobalStatusFile
-            : configuration.Scheduler.GlobalStatusFile!;
+        // Caminho fixo, sem configuracao.
+        //
+        // Ele ja foi configuravel, e isso deu errado de um jeito silencioso: um
+        // caminho relativo — como o "PREENCHER-DESTINO-RAIZ\_STATUS-GERAL.txt"
+        // que vinha no modelo — se resolve contra o diretorio de trabalho, e o
+        // programa passava a escrever dentro da propria pasta de instalacao,
+        // criando ali uma pasta com o nome do proprio placeholder. Este arquivo
+        // descreve o estado do CI, nao um entregavel: o lugar dele e junto do
+        // resto dos dados do aplicativo.
+        var path = AppPaths.DefaultGlobalStatusFile;
 
         // Tudo sob o lock, leitura inclusive: o objetivo e que o arquivo reflita
         // um instante coerente, nao apenas que a escrita nao se intercale.

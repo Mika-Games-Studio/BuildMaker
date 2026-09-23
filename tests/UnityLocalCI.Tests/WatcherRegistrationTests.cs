@@ -36,7 +36,6 @@ public class WatcherRegistrationTests : IDisposable
         },
         ManualTriggerFile = Path.Combine(_pasta, "triggers", nome + ".txt"),
         Unity = new UnityOptions { EditorVersion = "6000.3.20f1" },
-        Publishing = new PublishingOptions { ArtifactFolder = Path.Combine(_pasta, "dest", nome) },
     };
 
     private ServiceProvider Montar(params ProjectOptions[] projetos)
@@ -48,10 +47,10 @@ public class WatcherRegistrationTests : IDisposable
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["State:DatabasePath"] = Path.Combine(_pasta, "state", "ci.db"),
-                ["State:LogFolder"] = Path.Combine(_pasta, "logs"),
                 ["Defaults:Unity:ExecuteMethod"] = "Builder.PerformBuild",
                 ["Defaults:Unity:TimeoutMinutes"] = "90",
                 ["Defaults:Publishing:StagingFolder"] = Path.Combine(_pasta, "staging"),
+                ["Defaults:Publishing:ArtifactFolder"] = Path.Combine(_pasta, "dest"),
             })
             .Build();
 

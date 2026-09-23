@@ -74,7 +74,14 @@ public static class ProjectResolver
                 pk?.NamePattern ?? dpk.NamePattern ?? FallbackNamePattern),
             Publishing: new ResolvedPublishing(
                 pb?.StagingFolder ?? dpb.StagingFolder ?? "",
-                pb?.ArtifactFolder ?? dpb.ArtifactFolder ?? "",
+
+                // So dos padroes, de proposito: a pasta de destino e uma so para
+                // todos os projetos. Cada zip ja tem projeto, branch, data e
+                // commit no nome, entao uma pasta por jogo nao separava nada — e
+                // era mais um campo para preencher a cada projeto novo, com a
+                // chance de um deles apontar para outro lugar sem ninguem ver.
+                dpb.ArtifactFolder ?? "",
+
                 pb?.WriteStatusFiles ?? dpb.WriteStatusFiles ?? true),
             Retention: new ResolvedRetention(
                 rt?.KeepLastBuilds ?? drt.KeepLastBuilds ?? FallbackKeepLastBuilds,

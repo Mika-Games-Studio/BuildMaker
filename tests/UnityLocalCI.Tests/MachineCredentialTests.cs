@@ -25,12 +25,14 @@ public class MachineCredentialTests
             PatCredentialName = credencialPropria,
         },
         Unity = new UnityOptions { EditorVersion = "2022.3.62f3" },
-        Publishing = new PublishingOptions { ArtifactFolder = @"D:\builds\crash" },
     };
 
     private static ProjectDefaults Padroes(string? credencialDaMaquina) => new()
     {
         Repository = new RepositoryDefaults { PatCredentialName = credencialDaMaquina },
+
+        // A pasta de destino e uma so, para todos os projetos, e vem daqui.
+        Publishing = new PublishingOptions { ArtifactFolder = @"D:\builds" },
     };
 
     [Fact]

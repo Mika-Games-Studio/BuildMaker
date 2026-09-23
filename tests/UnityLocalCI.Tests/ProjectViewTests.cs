@@ -135,7 +135,6 @@ public class ProjectViewTests : IDisposable
 
     [Theory]
     [InlineData(nameof(ProjectView.WorkspacePath), typeof(FolderPathEditor))]
-    [InlineData(nameof(ProjectView.ArtifactFolder), typeof(FolderPathEditor))]
     [InlineData(nameof(ProjectView.ManualTriggerFile), typeof(FilePathEditor))]
     public void Campos_de_caminho_abrem_caixa_de_selecao(string propriedade, Type editorEsperado)
     {
@@ -147,8 +146,8 @@ public class ProjectViewTests : IDisposable
 
     [Theory]
     [InlineData(nameof(GeneralView.StagingFolder), typeof(FolderPathEditor))]
+    [InlineData(nameof(GeneralView.ArtifactFolder), typeof(FolderPathEditor))]
     [InlineData(nameof(GeneralView.DatabasePath), typeof(FilePathEditor))]
-    [InlineData(nameof(GeneralView.GlobalStatusFile), typeof(FilePathEditor))]
     public void Caminhos_da_aba_geral_tambem(string propriedade, Type editorEsperado)
     {
         var descritor = TypeDescriptor.GetProperties(typeof(GeneralView))[propriedade];
@@ -171,12 +170,14 @@ public class ProjectViewTests : IDisposable
             MaxConcurrentBuilds = 4,
             DatabasePath = @"D:\ci\state\db.sqlite",
             StagingFolder = @"D:\ci\staging",
+            ArtifactFolder = @"D:\entregas",
             EditorVersion = "2022.3.62f3",
         };
 
         Assert.Equal(4, options.Scheduler.MaxConcurrentBuilds);
         Assert.Equal(@"D:\ci\state\db.sqlite", options.State.DatabasePath);
         Assert.Equal(@"D:\ci\staging", options.Defaults.Publishing.StagingFolder);
+        Assert.Equal(@"D:\entregas", options.Defaults.Publishing.ArtifactFolder);
         Assert.Equal("2022.3.62f3", options.Defaults.Unity.EditorVersion);
         Assert.Equal(4, view.MaxConcurrentBuilds);
     }
@@ -210,14 +211,14 @@ public class ProjectViewTests : IDisposable
             Url = " https://github.com/OPAGames/CrashUnity.git ",
             Branch = " crash-aviaturbo-hml ",
             WorkspacePath = @"  C:\ci\workspace\Crash  ",
-            ArtifactFolder = @"  D:\builds\crash  ",
+            ManualTriggerFile = @"  C:\ci\triggers\Crash.txt  ",
         };
 
         Assert.Equal("Crash", projeto.Name);
         Assert.Equal("https://github.com/OPAGames/CrashUnity.git", projeto.Repository!.Url);
         Assert.Equal("crash-aviaturbo-hml", projeto.Repository.Branch);
         Assert.Equal(@"C:\ci\workspace\Crash", projeto.Repository.WorkspacePath);
-        Assert.Equal(@"D:\builds\crash", projeto.Publishing!.ArtifactFolder);
+        Assert.Equal(@"C:\ci\triggers\Crash.txt", projeto.ManualTriggerFile);
     }
 
     public void Dispose()

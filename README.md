@@ -88,7 +88,7 @@ Na página **Configuração → Projetos**, clique em **Vincular projeto Unity**
 - a **URL** e a **branch**, lidas do `.git` daquele clone;
 - a **versão do editor**, lida do `ProjectSettings/ProjectVersion.txt` do projeto — nunca adivinhada, nunca digitada.
 
-Falta escolher a **pasta de destino**, onde o time pega o zip. Todos os campos de caminho abrem a caixa de seleção do Windows, em vez de esperar o caminho digitado. Depois marque `Enabled` como `True` e use **Salvar e reiniciar**.
+A **pasta de destino** não é pedida aqui: ela é uma só, para todos os projetos, e fica na aba **Geral**. Todos os campos de caminho abrem a caixa de seleção do Windows, em vez de esperar o caminho digitado. Depois marque `Enabled` como `True` e use **Salvar e reiniciar**.
 
 > O CI **não constrói dentro da pasta que você escolheu**. Ele clona no workspace dele, que é exclusivo e onde ele apaga o que não estiver commitado antes de cada build. Por isso o workspace sugerido é outro caminho, e não a sua pasta de trabalho.
 
@@ -271,12 +271,12 @@ Tudo que precisa ser preenchido antes do primeiro uso real. Nada disso foi inven
 | `PREENCHER-NOME-DO-PROJETO` | `Projects[].ManualTriggerFile` | Nome do arquivo de gatilho manual. |
 | `PREENCHER-URL-DO-REPOSITORIO` | `Projects[].Repository.Url` | URL do repositório no Azure DevOps. |
 | `PREENCHER-VERSAO-DO-EDITOR` | `Defaults.Unity.EditorVersion` | Versão exata do editor, ex.: `6000.0.47f1`. Cada projeto pode sobrescrever a sua. |
-| `PREENCHER-PASTA-DE-DESTINO` | `Projects[].Publishing.ArtifactFolder` | Pasta onde o time pega o zip. |
+| `PREENCHER-PASTA-DE-DESTINO` | `Defaults.Publishing.ArtifactFolder` | Pasta onde o time pega os zips. É **uma só, para todos os projetos**: cada zip já tem projeto, branch, data e commit no nome. |
 | `PREENCHER-NOME-DO-PROJETO` | `tools/post-merge.hook` | Nome do projeto no hook, se for usá-lo. |
 
 Valores que já vêm prontos e você provavelmente quer conferir: `Branch` (`HML`) e os caminhos locais em `C:\ci\` (workspace, staging, triggers). A credencial não está nessa lista porque **não é por projeto**: ela mora em `Defaults.Repository.PatCredentialName` e é preenchida pelo botão **Conectar ao GitHub**.
 
-O banco e os arquivos de status não aparecem na configuração porque não precisam: vão para `%LOCALAPPDATA%\BuildMaker\`, que é onde um aplicativo do Windows guarda o que é dele. `State.DatabasePath` e `Scheduler.GlobalStatusFile` existem para quem quiser outro lugar, e só.
+O banco e os arquivos de status não aparecem na configuração porque não precisam: vão para `%LOCALAPPDATA%\BuildMaker\`, que é onde um aplicativo do Windows guarda o que é dele. Só o banco tem caminho configurável, em `State.DatabasePath`; o status é fixo. Já foi configurável, e um caminho relativo ali fazia o programa escrever dentro da própria pasta de instalação — inclusive criando uma pasta com o nome do placeholder que vinha no modelo.
 
 > **Os caminhos usam `C:\ci\`, não `D:\ci\` como na especificação**, porque esta máquina só tem o drive C:. Se a máquina de build tiver um D:, troque nos quatro lugares: `State.DatabasePath`, `State.LogFolder`, `Defaults.Publishing.StagingFolder` e `Projects[].Repository.WorkspacePath`.
 
@@ -295,7 +295,6 @@ Um bloco novo em `Projects`, sem mudança de código. `Defaults` cobre o resto; 
     "PatCredentialName": "UnityLocalCI_AzureDevOpsPat"
   },
   "Unity": { "EditorVersion": "6000.0.32f1" },
-  "Publishing": { "ArtifactFolder": "\\\\build01\\builds\\mines\\hml" },
   "ManualTriggerFile": "C:\\ci\\triggers\\mines.txt"
 }
 ```
@@ -568,7 +567,7 @@ powershell -ExecutionPolicy Bypass -File tools\install-service.ps1 -Conta "DOMIN
 
 > **Duas armadilhas de conta de serviço.** O Credential Manager é **por usuário**: os segredos precisam ser gravados logado como a conta que executa o serviço, senão ele sobe e não encontra nada. E o .NET instalado no perfil de um usuário (`%USERPROFILE%\.dotnet`) não é visto por outra conta — instale-o para a máquina inteira, ou defina `DOTNET_ROOT` no ambiente do serviço. O `install-service.ps1` avisa sobre as duas.
 
-> Os demais campos de configuração da fase 2 (`WriteStatusFiles`, `Retention`, `ManualTriggerFile`, `GlobalStatusFile`) já existem e são validados, mas ainda não têm efeito.
+> Os demais campos de configuração da fase 2 (`WriteStatusFiles`, `Retention`, `ManualTriggerFile`) já existem e são validados, mas ainda não têm efeito.
 
 ### Fase 3 — operação (concluída)
 
