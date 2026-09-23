@@ -13,19 +13,19 @@ public class RetentionServiceTests : IDisposable
 
     private readonly string _destination;
     private readonly string _staging;
-    private readonly string _logs;
+    /// <summary>Sobra de quando o log ia para disco; a retencao ainda a limpa.</summary>
+    private readonly string _logsNoDestino;
     private readonly InMemoryBuildStore _store = new();
 
     public RetentionServiceTests()
     {
         _destination = Path.Combine(_root, "destino");
         _staging = Path.Combine(_root, "staging");
-        _logs = Path.Combine(_root, "logs");
+        _logsNoDestino = Path.Combine(_destination, "_logs");
 
         Directory.CreateDirectory(_destination);
         Directory.CreateDirectory(_staging);
-        Directory.CreateDirectory(_logs);
-        Directory.CreateDirectory(Path.Combine(_destination, "_logs"));
+        Directory.CreateDirectory(_logsNoDestino);
     }
 
     public void Dispose()
@@ -59,10 +59,9 @@ public class RetentionServiceTests : IDisposable
         var zipName = $"Crash-HML-2026-{id}.zip";
         var published = Path.Combine(_destination, zipName);
         var staged = Path.Combine(_staging, zipName);
-        var log = Path.Combine(_logs, $"build-{id}.log");
-        var copiedLog = Path.Combine(_destination, "_logs", $"build-{id}.log");
+        var sobraDeLog = Path.Combine(_logsNoDestino, $"build-{id}.log");
 
-        foreach (var file in new[] { published, staged, log, copiedLog })
+        foreach (var file in new[] { published, staged, sobraDeLog })
             await File.WriteAllTextAsync(file, "conteudo");
 
         var record = await _store.GetAsync(id, default);
@@ -73,7 +72,6 @@ public class RetentionServiceTests : IDisposable
             PublishedPath = published,
             ArtifactPath = staged,
             PublishStatus = publish,
-            LogPath = log,
         }, default);
 
         return id;
@@ -104,7 +102,7 @@ public class RetentionServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Poda_apaga_zip_do_staging_e_os_dois_logs()
+    public async Task Poda_apaga_o_zip_do_staging_e_a_sobra_de_log()
     {
         var antiga = await SeedAsync();
         for (var i = 0; i < 2; i++) await SeedAsync();
@@ -112,8 +110,7 @@ public class RetentionServiceTests : IDisposable
         await Create().ApplyAsync(Project(keepLastBuilds: 2), default);
 
         Assert.False(File.Exists(Path.Combine(_staging, $"Crash-HML-2026-{antiga}.zip")));
-        Assert.False(File.Exists(Path.Combine(_logs, $"build-{antiga}.log")));
-        Assert.False(File.Exists(Path.Combine(_destination, "_logs", $"build-{antiga}.log")));
+        Assert.False(File.Exists(Path.Combine(_logsNoDestino, $"build-{antiga}.log")));
     }
 
     [Fact]
@@ -124,7 +121,7 @@ public class RetentionServiceTests : IDisposable
 
         await Create().ApplyAsync(Project(keepLastBuilds: 2), default);
 
-        // Senao o _HISTORICO.txt continuaria oferecendo um zip que nao existe mais.
+        // Senao o historico em JSON continuaria oferecendo um zip que nao existe mais.
         var record = await _store.GetAsync(antiga, default);
         Assert.Null(record!.PublishedPath);
         Assert.Null(record.ArtifactPath);
@@ -157,22 +154,21 @@ public class RetentionServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Build_que_acabou_de_falhar_mantem_o_log()
+    public async Task Build_que_acabou_de_falhar_nao_e_podada()
     {
-        // Regressao: a retencao contava so builds bem-sucedidas, entao uma
-        // falha era podada na mesma execucao que a criou. O _STATUS.txt mandava
-        // abrir "ver _logs\build-1.log" e o arquivo ja nao existia.
+        // Regressao: a retencao contava so builds bem-sucedidas, entao uma falha
+        // era podada na mesma execucao que a criou — o status recem-escrito ja
+        // apontava para arquivos que nao existiam mais.
         var id = await SeedAsync(status: BuildStatus.Failed);
 
         await Create().ApplyAsync(Project(keepLastBuilds: 10), default);
 
-        Assert.True(File.Exists(Path.Combine(_logs, $"build-{id}.log")),
-            "o log da build recem-falhada precisa sobreviver a retencao");
-        Assert.True(File.Exists(Path.Combine(_destination, "_logs", $"build-{id}.log")));
+        Assert.True(File.Exists(Path.Combine(_logsNoDestino, $"build-{id}.log")),
+            "a build recem-falhada precisa sobreviver a retencao");
     }
 
     [Fact]
-    public async Task Falhas_recentes_mantem_o_log_mesmo_sem_nenhuma_build_boa()
+    public async Task Falhas_recentes_sobrevivem_mesmo_sem_nenhuma_build_boa()
     {
         var ids = new List<long>();
         for (var i = 0; i < 3; i++) ids.Add(await SeedAsync(status: BuildStatus.Failed));
@@ -180,7 +176,7 @@ public class RetentionServiceTests : IDisposable
         await Create().ApplyAsync(Project(keepLastBuilds: 10), default);
 
         foreach (var id in ids)
-            Assert.True(File.Exists(Path.Combine(_logs, $"build-{id}.log")));
+            Assert.True(File.Exists(Path.Combine(_logsNoDestino, $"build-{id}.log")));
     }
 
     [Fact]
@@ -193,7 +189,7 @@ public class RetentionServiceTests : IDisposable
 
         // O piso e por contagem, nao "falha nunca e podada": manter falhas para
         // sempre encheria o disco com o que ninguem vai ler.
-        Assert.False(File.Exists(Path.Combine(_logs, $"build-{antiga}.log")));
+        Assert.False(File.Exists(Path.Combine(_logsNoDestino, $"build-{antiga}.log")));
     }
 
     [Fact]

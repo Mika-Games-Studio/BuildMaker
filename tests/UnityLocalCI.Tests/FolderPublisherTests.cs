@@ -128,7 +128,6 @@ public class FolderPublisherTests : IDisposable
             Commit = new CommitInfo(new string('a', 40), "Fulano", "mensagem"),
             Trigger = BuildTrigger.Poll,
             StartedAt = DateTimeOffset.UnixEpoch,
-            LogPath = Path.Combine(_root, "build-42.log"),
             BuildOutputPath = Path.Combine(_root, "out"),
             Git = new GitContext
             {

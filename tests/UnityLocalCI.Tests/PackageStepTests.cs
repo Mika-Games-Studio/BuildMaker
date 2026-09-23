@@ -54,7 +54,6 @@ public class PackageStepTests : IDisposable
             Commit = new CommitInfo(new string('a', 40), "Fulano", "mensagem"),
             Trigger = BuildTrigger.Manual,
             StartedAt = DateTimeOffset.UnixEpoch,
-            LogPath = Path.Combine(_root, "build-7.log"),
             BuildOutputPath = Saida,
             Git = new GitContext
             {

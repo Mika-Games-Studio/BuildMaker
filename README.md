@@ -264,10 +264,11 @@ Tudo que precisa ser preenchido antes do primeiro uso real. Nada disso foi inven
 | `PREENCHER-URL-DO-REPOSITORIO` | `Projects[].Repository.Url` | URL do repositório no Azure DevOps. |
 | `PREENCHER-VERSAO-DO-EDITOR` | `Defaults.Unity.EditorVersion` | Versão exata do editor, ex.: `6000.0.47f1`. Cada projeto pode sobrescrever a sua. |
 | `PREENCHER-PASTA-DE-DESTINO` | `Projects[].Publishing.ArtifactFolder` | Pasta onde o time pega o zip. |
-| `PREENCHER-DESTINO-RAIZ` | `Scheduler.GlobalStatusFile` | Raiz do compartilhamento, onde vai o `_STATUS-GERAL.txt`. |
 | `PREENCHER-NOME-DO-PROJETO` | `tools/post-merge.hook` | Nome do projeto no hook, se for usá-lo. |
 
-Valores que já vêm prontos e você provavelmente quer conferir: `Branch` (`HML`) e os caminhos locais em `C:\ci\` (workspace, staging, state, logs, triggers). A credencial não está nessa lista porque **não é por projeto**: ela mora em `Defaults.Repository.PatCredentialName` e é preenchida pelo botão **Conectar ao GitHub**.
+Valores que já vêm prontos e você provavelmente quer conferir: `Branch` (`HML`) e os caminhos locais em `C:\ci\` (workspace, staging, triggers). A credencial não está nessa lista porque **não é por projeto**: ela mora em `Defaults.Repository.PatCredentialName` e é preenchida pelo botão **Conectar ao GitHub**.
+
+O banco, o log do serviço e os arquivos de status não aparecem na configuração porque não precisam: vão para `%LOCALAPPDATA%\BuildMaker\`, que é onde um aplicativo do Windows guarda o que é dele. `State.DatabasePath`, `State.LogFolder` e `Scheduler.GlobalStatusFile` existem para quem quiser outro lugar, e só.
 
 > **Os caminhos usam `C:\ci\`, não `D:\ci\` como na especificação**, porque esta máquina só tem o drive C:. Se a máquina de build tiver um D:, troque nos quatro lugares: `State.DatabasePath`, `State.LogFolder`, `Defaults.Publishing.StagingFolder` e `Projects[].Repository.WorkspacePath`.
 
@@ -412,10 +413,9 @@ dotnet test
 |---|---|
 | `Builder.cs` em `unity/`, com instruções de instalação | **pronto** |
 | Contrato de log entre o `Builder.cs` e o pipeline | **pronto** |
-| `_STATUS.txt`, `_HISTORICO.txt` e `_STATUS-GERAL.txt` | **pronto** |
+| Status e histórico em JSON, em `%LOCALAPPDATA%\BuildMaker\status\` | **pronto** |
 | Pasta `latest\` trocada por rename de diretório | **pronto** |
-| `rodar.bat` no zip e em `latest\` | **pronto** |
-| Cópia do log da build para `_logs\` | **pronto** |
+| `rodar.bat` em `latest\` | **pronto** |
 | Gatilho manual por arquivo observado | **pronto** |
 | Retenção por contagem | **pronto** |
 
@@ -423,32 +423,26 @@ dotnet test
 
 O `Builder.cs` vem primeiro porque é ele que faz o Unity retornar código diferente de zero em build quebrada. Enquanto ele não estiver instalado no projeto Unity, o pipeline pode publicar lixo — ver [`unity/README.md`](unity/README.md).
 
-### A pasta como interface
+### Onde ficam os dados
 
-Sem painel web, a própria pasta comunica o estado. O que o time encontra hoje no destino de cada projeto:
+A pasta de destino de cada projeto contém **só os zips** e a pasta `latest\`. Nada mais: ela é o que o time abre para pegar a build, e arquivo de CI no meio dos entregáveis confunde quem recebe.
 
-```
-\\build01\builds\crash\hml\
-├── _STATUS.txt        resultado da última build, com o erro resumido em caso de falha
-├── _HISTORICO.txt     últimas 20 builds que rodaram, uma linha cada
-└── _logs\
-    └── build-42.log   o log completo, ao lado do status que aponta para ele
-```
-
-E na raiz do compartilhamento, um arquivo consolidando todos os projetos, para não ser preciso abrir uma pasta por jogo:
+O que é do próprio aplicativo vive onde o Windows espera:
 
 ```
-CI LOCAL — 16/09/2026 15:27
-
-PROJETO  ESTADO       ÚLTIMA BUILD  COMMIT   ARQUIVO
-Crash    ok           16/09 15:27   a1b2c3d  Crash-HML-20260916-a1b2c3d.zip
-Mines    construindo  (iniciou 15:22)  9f8e7d6  —
-Rocket   FALHOU       15/09 18:02   4e5f6a7  ver _logs\build-39.log
-
-Fila: 0 aguardando  |  Em execução: 1 de 2
+%LOCALAPPDATA%\BuildMaker\
+├── state\buildmaker.db      histórico das builds
+├── logs\servico-AAAA-MM-DD.log
+└── status\
+    ├── geral.json           todos os projetos num arquivo
+    └── Crash.json           última build, a anterior, avisos e as 20 do histórico
 ```
 
-O `_STATUS-GERAL.txt` é reescrito quando qualquer build termina **e** quando uma entra em execução, para que quem o abrir durante uma build de 30 minutos veja `construindo`, e não o resultado da anterior. A escrita é serializada entre projetos: duas builds terminando juntas não podem produzir um arquivo que descreve um estado que nunca existiu.
+O `geral.json` é reescrito quando qualquer build termina **e** quando uma entra em execução, para que quem o ler durante uma build de 30 minutos veja o estado atual, e não o resultado da anterior. A escrita é serializada entre projetos: duas builds terminando juntas não podem produzir um arquivo que descreve um estado que nunca existiu.
+
+O formato é JSON, e não texto alinhado a coluna, porque o leitor mudou. Quem quer olhar abre a janela do BuildMaker, que mostra tudo isso formatado; o que sobra para o arquivo é ser consumido por outra coisa — um script, um painel, um bot —, e para isso texto alinhado é péssimo.
+
+**O log de cada build não vai para disco.** Ele existe em memória enquanto o programa está aberto, aparece na janela linha a linha enquanto a build roda, e acaba junto com o processo. O que sobrevive é o que responde alguma pergunta depois: o registro no banco e o resumo do erro.
 
 A pasta `latest\` é a build mais recente já descompactada: quem só quer testar entra, roda o `rodar.bat` e joga. A troca é feita por rename de diretório — a build nova é copiada inteira para `latest.new\` e só então assume o nome —, porque copiar por cima deixaria a pasta em estado parcial por vários segundos, e quem a abrisse nesse intervalo pegaria uma build quebrada sem nenhum sinal disso.
 
@@ -490,13 +484,13 @@ O gatilho manual **ignora o debounce** de propósito — ele existe justamente p
 
 ### Retenção
 
-Executada ao fim de cada build: mantém as `KeepLastBuilds` builds **bem-sucedidas** mais recentes e apaga, das demais, o zip no destino, o zip no staging, o log local e a cópia em `_logs\`.
+Executada ao fim de cada build: mantém as `KeepLastBuilds` builds **bem-sucedidas** mais recentes e apaga, das demais, o zip no destino e o zip no staging.
 
 Três detalhes que a implementação garante:
 
 - **Contam-se as bem-sucedidas.** Uma sequência de falhas não empurra para fora o último artefato que de fato funciona.
 - **Cópia pendente nunca perde o staging.** Se o destino estava fora do ar, aquele zip só existe ali.
-- **A poda é guiada pelo banco, não por varredura da pasta.** Ela apaga exatamente os arquivos que cada build registrou, e nunca um `_STATUS.txt`, a pasta `latest\`, ou um zip que alguém copiou para lá na mão.
+- **A poda é guiada pelo banco, não por varredura da pasta.** Ela apaga exatamente os arquivos que cada build registrou, e nunca a pasta `latest\` nem um zip que alguém copiou para lá na mão.
 
 A retenção também roda quando um job está adiado por falta de disco. Sem isso ele esperaria para sempre: a poda só acontece ao fim de uma build, e nenhuma ia começar.
 

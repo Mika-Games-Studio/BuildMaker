@@ -1,4 +1,6 @@
+using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
+using UnityLocalCI.Core;
 using UnityLocalCI.Core.Configuration;
 using UnityLocalCI.Core.Publishing;
 using UnityLocalCI.Core.Queue;
@@ -19,7 +21,7 @@ public class GlobalStatusWriterTests : IDisposable
     public GlobalStatusWriterTests()
     {
         Directory.CreateDirectory(_root);
-        _statusFile = Path.Combine(_root, "_STATUS-GERAL.txt");
+        _statusFile = Path.Combine(_root, "geral.json");
 
         _options = new CiOptions
         {
@@ -87,25 +89,38 @@ public class GlobalStatusWriterTests : IDisposable
         return id;
     }
 
+    /// <summary>O documento lido do arquivo, ja como JSON.</summary>
+    private async Task<JsonElement> LerAsync()
+        => JsonDocument.Parse(await File.ReadAllTextAsync(_statusFile)).RootElement;
+
+    private async Task<JsonElement> ProjetoAsync(string nome)
+    {
+        var raiz = await LerAsync();
+        return raiz.GetProperty("Projetos")
+            .EnumerateArray()
+            .Single(p => p.GetProperty("Projeto").GetString() == nome);
+    }
+
     [Fact]
-    public async Task Escreve_uma_linha_por_projeto_configurado()
+    public async Task Escreve_uma_entrada_por_projeto_configurado()
     {
         await SeedFinishedAsync("Crash", BuildStatus.Succeeded);
         await SeedFinishedAsync("Rocket", BuildStatus.Failed);
 
         await Create().WriteAsync(default);
 
-        var text = await File.ReadAllTextAsync(_statusFile);
+        var projetos = (await LerAsync()).GetProperty("Projetos");
 
-        Assert.Contains("CI LOCAL", text);
-        Assert.Contains("Crash", text);
-        Assert.Contains("Mines", text);
-        Assert.Contains("Rocket", text);
-        Assert.Contains("nunca", text); // Mines ainda nao construiu
+        Assert.Equal(3, projetos.GetArrayLength());
+        Assert.Equal("SUCESSO", (await ProjetoAsync("Crash")).GetProperty("UltimaBuild").GetProperty("Status").GetString());
+        Assert.Equal("FALHOU", (await ProjetoAsync("Rocket")).GetProperty("UltimaBuild").GetProperty("Status").GetString());
+
+        // Mines ainda nao construiu: o campo existe como null, e nao some.
+        Assert.Equal(JsonValueKind.Null, (await ProjetoAsync("Mines")).GetProperty("UltimaBuild").ValueKind);
     }
 
     [Fact]
-    public async Task Build_em_execucao_aparece_como_construindo()
+    public async Task Build_em_execucao_aparece_como_em_execucao()
     {
         await _store.CreateAsync(new BuildRecord
         {
@@ -119,11 +134,10 @@ public class GlobalStatusWriterTests : IDisposable
 
         await Create().WriteAsync(default);
 
-        var line = Assert.Single(
-            await File.ReadAllLinesAsync(_statusFile),
-            l => l.StartsWith("Mines"));
+        var mines = await ProjetoAsync("Mines");
 
-        Assert.Contains("construindo", line);
+        Assert.True(mines.GetProperty("EmExecucao").GetBoolean());
+        Assert.NotEqual(JsonValueKind.Null, mines.GetProperty("IniciouEm").ValueKind);
     }
 
     [Fact]
@@ -136,17 +150,15 @@ public class GlobalStatusWriterTests : IDisposable
         var writer = Create();
 
         // Muito mais que duas, de proposito: sem o lock, o arquivo sai truncado
-        // ou com duas versoes intercaladas, e com ele toda leitura e valida.
+        // ou com duas versoes intercaladas. Em JSON isso e ainda mais direto de
+        // verificar — um arquivo meio escrito simplesmente nao parseia.
         await Task.WhenAll(Enumerable.Range(0, 40).Select(_ => writer.WriteAsync(default)));
 
-        var lines = await File.ReadAllLinesAsync(_statusFile);
+        var projetos = (await LerAsync()).GetProperty("Projetos");
 
-        Assert.StartsWith("CI LOCAL", lines[0]);
-        Assert.Single(lines, l => l.StartsWith("PROJETO"));
-        Assert.Single(lines, l => l.StartsWith("Crash"));
-        Assert.Single(lines, l => l.StartsWith("Mines"));
-        Assert.Single(lines, l => l.StartsWith("Rocket"));
-        Assert.Single(lines, l => l.StartsWith("Fila:"));
+        Assert.Equal(3, projetos.GetArrayLength());
+        foreach (var nome in new[] { "Crash", "Mines", "Rocket" })
+            Assert.Single(projetos.EnumerateArray(), p => p.GetProperty("Projeto").GetString() == nome);
     }
 
     [Fact]
@@ -183,17 +195,16 @@ public class GlobalStatusWriterTests : IDisposable
         scheduler.Release();
         await Task.WhenAll(slow, fast);
 
-        var mines = Assert.Single(await File.ReadAllLinesAsync(_statusFile), l => l.StartsWith("Mines"));
-        Assert.DoesNotContain("nunca", mines);
-        Assert.Contains("ok", mines);
+        var mines = await ProjetoAsync("Mines");
+        Assert.Equal("SUCESSO", mines.GetProperty("UltimaBuild").GetProperty("Status").GetString());
     }
 
     [Fact]
-    public async Task Rodape_nao_contradiz_as_linhas_de_projeto()
+    public async Task O_contador_nao_contradiz_os_projetos()
     {
         // O arquivo e reescrito de dentro do pipeline, quando a build que acabou
-        // ainda ocupa a vaga no scheduler. Se o rodape viesse do contador do
-        // scheduler, diria "1 em execução" logo abaixo de uma linha FALHOU.
+        // ainda ocupa a vaga no scheduler. Se o contador viesse do scheduler,
+        // diria "1 em execucao" num arquivo onde nenhum projeto esta rodando.
         await SeedFinishedAsync("Crash", BuildStatus.Failed);
 
         var writer = new GlobalStatusWriter(
@@ -205,10 +216,13 @@ public class GlobalStatusWriterTests : IDisposable
 
         await writer.WriteAsync(default);
 
-        var text = await File.ReadAllTextAsync(_statusFile);
+        var raiz = await LerAsync();
 
-        Assert.Contains("Em execução: 0 de 2", text);
-        Assert.DoesNotContain("construindo", text);
+        Assert.Equal(0, raiz.GetProperty("EmExecucao").GetInt32());
+        Assert.Equal(2, raiz.GetProperty("MaximoSimultaneo").GetInt32());
+        Assert.DoesNotContain(
+            raiz.GetProperty("Projetos").EnumerateArray(),
+            p => p.GetProperty("EmExecucao").GetBoolean());
     }
 
     [Fact]
@@ -226,20 +240,41 @@ public class GlobalStatusWriterTests : IDisposable
     public async Task Destino_indisponivel_nao_derruba_a_build()
     {
         // Um arquivo no lugar da pasta e o que se ve quando o compartilhamento cai.
-        _options.Scheduler.GlobalStatusFile = Path.Combine(_root, "arquivo.txt", "_STATUS-GERAL.txt");
+        _options.Scheduler.GlobalStatusFile = Path.Combine(_root, "arquivo.txt", "geral.json");
         await File.WriteAllTextAsync(Path.Combine(_root, "arquivo.txt"), "nao sou uma pasta");
 
         await Create().WriteAsync(default);
     }
 
+    /// <summary>
+    /// Sem caminho na configuracao o arquivo nao deixa de sair: ele vai para a
+    /// pasta do proprio aplicativo. Este arquivo descreve o estado do CI, nao um
+    /// compartilhamento de equipe — nao ha motivo para depender de alguem ter
+    /// preenchido um destino.
+    /// </summary>
     [Fact]
-    public async Task Sem_caminho_configurado_nao_escreve_nada()
+    public async Task Sem_caminho_configurado_escreve_na_pasta_do_aplicativo()
     {
         _options.Scheduler.GlobalStatusFile = null;
+        await SeedFinishedAsync("Crash", BuildStatus.Succeeded);
 
-        await Create().WriteAsync(default);
+        var padrao = AppPaths.DefaultGlobalStatusFile;
+        var anterior = File.Exists(padrao) ? await File.ReadAllTextAsync(padrao) : null;
 
-        Assert.False(File.Exists(_statusFile));
+        try
+        {
+            await Create().WriteAsync(default);
+
+            Assert.True(File.Exists(padrao));
+            Assert.False(File.Exists(_statusFile));
+        }
+        finally
+        {
+            // O teste nao pode deixar o estado real da maquina diferente do que
+            // encontrou: este e o arquivo de verdade do aplicativo.
+            if (anterior is not null) await File.WriteAllTextAsync(padrao, anterior);
+            else File.Delete(padrao);
+        }
     }
 }
 

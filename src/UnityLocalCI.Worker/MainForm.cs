@@ -36,6 +36,12 @@ public sealed class MainForm : Form
     private readonly DataGridView _buildsGrid = NewGrid();
     private readonly LogView _buildLog = new() { Dock = DockStyle.Fill };
 
+    /// <summary>Copia o log da build. Mandar o log para alguem e o que se faz com ele.</summary>
+    private readonly PillButton _copiarLog = new("Copiar", ButtonKind.Ghost);
+
+    /// <summary>Devolve o rotulo do botao depois da confirmacao de copia.</summary>
+    private readonly System.Windows.Forms.Timer _restaurarCopiar = new() { Interval = 1500 };
+
     /// <summary>De qual build e o log do painel de baixo.</summary>
     private readonly Label _buildLogTitle = new()
     {
@@ -296,6 +302,21 @@ public sealed class MainForm : Form
         };
 
         split.Panel1.Controls.Add(NewCard(_buildsGrid));
+
+        // O botao vai dentro da faixa do titulo, alinhado a direita, e nao numa
+        // barra propria: uma barra so para ele roubaria altura de um painel que
+        // ja e o menor da tela.
+        _copiarLog.Size = new Size(84, 24);
+        _copiarLog.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+        _copiarLog.Location = new Point(_buildLogTitle.Width - 86, 1);
+        _copiarLog.Click += (_, _) => CopiarLogDaBuild();
+        _restaurarCopiar.Tick += (_, _) =>
+        {
+            _restaurarCopiar.Stop();
+            _copiarLog.Text = "Copiar";
+        };
+        _buildLogTitle.Controls.Add(_copiarLog);
+
         var cartaoDoLog = NewCard(_buildLog);
         cartaoDoLog.Controls.Add(_buildLogTitle);
         split.Panel2.Controls.Add(cartaoDoLog);
@@ -692,33 +713,40 @@ public sealed class MainForm : Form
         var services = _controller.Services;
         if (services is null) return;
 
-        _ = LoadBuildLogAsync(services, id);
+        ShowBuildLog(services, id);
     }
 
-    private async Task LoadBuildLogAsync(IServiceProvider services, long id)
+    /// <summary>
+    /// Mostra o log da build.
+    ///
+    /// Ele vem da memoria, nao de disco: o log existe enquanto o programa estiver
+    /// aberto e acaba com ele. Por isso a mensagem de vazio fala de sessao, e nao
+    /// de arquivo — nao ha arquivo que alguem possa ir procurar.
+    /// </summary>
+    private void ShowBuildLog(IServiceProvider services, long id)
     {
-        try
-        {
-            var record = await services.GetRequiredService<IBuildStore>().GetAsync(id, default);
-            var text = record?.LogPath is { } path && File.Exists(path)
-                ? await ReadSharedAsync(path)
-                : "(log nao encontrado em disco)";
+        var buffer = services.GetRequiredService<BuildLogBuffer>();
+        var linhas = buffer.Linhas(id);
 
-            BeginInvoke(() => _buildLog.Preencher(BuildLogLines(text)));
-        }
-        catch (Exception exception) when (exception is IOException or ObjectDisposedException)
-        {
-            BeginInvoke(() => _buildLog.Preencher(
-                [LogEntry.Corrida("(nao foi possivel ler o log: " + exception.Message + ")", LogTone.Error)]));
-        }
+        _buildLog.Preencher(linhas.Count > 0
+            ? BuildLogLines(string.Join(Environment.NewLine, linhas))
+            : [LogEntry.Corrida(
+                buffer.Tem(id)
+                    ? "(a build comecou agora; as linhas aparecem aqui conforme saem)"
+                    : "(sem log: esta build nao rodou desde que o programa foi aberto)",
+                LogTone.Muted)]);
     }
 
-    /// <summary>FileShare.ReadWrite: o log pode estar sendo escrito agora mesmo.</summary>
-    private static async Task<string> ReadSharedAsync(string path)
+    private void CopiarLogDaBuild()
     {
-        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-        using var reader = new StreamReader(stream);
-        return await reader.ReadToEndAsync();
+        var copiadas = _buildLog.Copiar();
+        if (copiadas == 0) return;
+
+        // A confirmacao e o proprio botao: um balao para dizer "copiado" pede um
+        // clique a mais para fechar algo que ninguem precisava ler.
+        _copiarLog.Text = copiadas + " linhas";
+        _restaurarCopiar.Stop();
+        _restaurarCopiar.Start();
     }
 
     // ------------------------------------------------------------------- acoes

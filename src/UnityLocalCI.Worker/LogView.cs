@@ -133,17 +133,42 @@ internal sealed class LogView : ListBox, IPaintsItself
         TopIndex = _novoNoTopo ? 0 : Items.Count - 1;
     }
 
+    /// <summary>
+    /// Copia o log para a area de transferencia: a selecao, quando ha uma, e o
+    /// log inteiro quando nao ha.
+    ///
+    /// As duas coisas pelo mesmo caminho porque sao a mesma intencao. Quem
+    /// selecionou quer aquele trecho; quem nao selecionou nada e clicou em
+    /// Copiar quer tudo — e "tudo" e o caso comum, que e mandar o log para
+    /// alguem olhar.
+    /// </summary>
+    /// <returns>Quantas linhas foram copiadas; zero se nao havia nada ou se a
+    /// area de transferencia recusou.</returns>
+    public int Copiar()
+    {
+        var origem = SelectedItems.Count > 0 ? SelectedItems.Cast<object>() : Items.Cast<object>();
+        var linhas = origem.Select(i => i.ToString()).ToArray();
+
+        if (linhas.Length == 0) return 0;
+
+        // A area de transferencia falha quando outro programa a esta segurando.
+        // Perder uma copia nao pode derrubar a janela.
+        try
+        {
+            Clipboard.SetText(string.Join(Environment.NewLine, linhas));
+            return linhas.Length;
+        }
+        catch (ExternalException)
+        {
+            return 0;
+        }
+    }
+
     protected override void OnKeyDown(KeyEventArgs e)
     {
-        if (e.Control && e.KeyCode == Keys.C && SelectedItems.Count > 0)
+        if (e.Control && e.KeyCode == Keys.C)
         {
-            var texto = string.Join(Environment.NewLine, SelectedItems.Cast<object>().Select(i => i.ToString()));
-
-            // A area de transferencia falha quando outro programa a esta
-            // segurando. Perder um Ctrl+C nao pode derrubar a janela.
-            try { Clipboard.SetText(texto); }
-            catch (ExternalException) { }
-
+            Copiar();
             e.Handled = true;
             return;
         }

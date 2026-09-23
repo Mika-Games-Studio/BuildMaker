@@ -14,9 +14,6 @@ public sealed class BuildContext
     public required GitContext Git { get; init; }
     public required DateTimeOffset StartedAt { get; init; }
 
-    /// <summary>Log da build, escrito em tempo real.</summary>
-    public required string LogPath { get; init; }
-
     /// <summary>Pasta onde o Unity grava o player. Sempre disco local.</summary>
     public required string BuildOutputPath { get; init; }
 

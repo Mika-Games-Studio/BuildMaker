@@ -72,6 +72,7 @@ public static class ServiceRegistration
 
         // Pipeline: escopo proprio por build, para que timeout ou travamento de
         // um projeto nao alcance os demais.
+        services.AddSingleton<BuildLogBuffer>();
         services.AddScoped<IBuildLogWriter, BuildLogWriter>();
         services.AddScoped<IArtifactPublisher, FolderPublisher>();
         services.AddScoped<INotifier, LogNotifier>();

@@ -262,7 +262,9 @@ public sealed class SqliteBuildStore : IBuildStore
         command.Parameters.AddWithValue("$artifactSha", (object?)r.ArtifactSha256 ?? DBNull.Value);
         command.Parameters.AddWithValue("$publishedPath", (object?)r.PublishedPath ?? DBNull.Value);
         command.Parameters.AddWithValue("$publishStatus", r.PublishStatus.ToString());
-        command.Parameters.AddWithValue("$logPath", (object?)r.LogPath ?? DBNull.Value);
+        // log_path sobreviveu no schema por compatibilidade com bancos antigos; o
+        // log da build nao vai mais para disco, entao nada e gravado nela.
+        command.Parameters.AddWithValue("$logPath", DBNull.Value);
         command.Parameters.AddWithValue("$errorSummary", (object?)r.ErrorSummary ?? DBNull.Value);
     }
 
@@ -287,7 +289,6 @@ public sealed class SqliteBuildStore : IBuildStore
         ArtifactSha256 = GetNullableString(reader, "artifact_sha256"),
         PublishedPath = GetNullableString(reader, "published_path"),
         PublishStatus = ParsePublishStatus(GetNullableString(reader, "publish_status")),
-        LogPath = GetNullableString(reader, "log_path"),
         ErrorSummary = GetNullableString(reader, "error_summary"),
     };
 
