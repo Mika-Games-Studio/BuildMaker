@@ -146,7 +146,6 @@ public class ProjectViewTests : IDisposable
     }
 
     [Theory]
-    [InlineData(nameof(GeneralView.LogFolder), typeof(FolderPathEditor))]
     [InlineData(nameof(GeneralView.StagingFolder), typeof(FolderPathEditor))]
     [InlineData(nameof(GeneralView.DatabasePath), typeof(FilePathEditor))]
     [InlineData(nameof(GeneralView.GlobalStatusFile), typeof(FilePathEditor))]
@@ -170,13 +169,13 @@ public class ProjectViewTests : IDisposable
         var view = new GeneralView(options)
         {
             MaxConcurrentBuilds = 4,
-            LogFolder = @"D:\ci\logs",
+            DatabasePath = @"D:\ci\state\db.sqlite",
             StagingFolder = @"D:\ci\staging",
             EditorVersion = "2022.3.62f3",
         };
 
         Assert.Equal(4, options.Scheduler.MaxConcurrentBuilds);
-        Assert.Equal(@"D:\ci\logs", options.State.LogFolder);
+        Assert.Equal(@"D:\ci\state\db.sqlite", options.State.DatabasePath);
         Assert.Equal(@"D:\ci\staging", options.Defaults.Publishing.StagingFolder);
         Assert.Equal("2022.3.62f3", options.Defaults.Unity.EditorVersion);
         Assert.Equal(4, view.MaxConcurrentBuilds);

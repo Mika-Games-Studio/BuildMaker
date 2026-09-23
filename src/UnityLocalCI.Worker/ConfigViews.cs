@@ -94,15 +94,6 @@ public sealed class GeneralView(CiOptions options)
         set => _state.DatabasePath = Texto.Limpo(value);
     }
 
-    [Category("ESTADO E LOGS")]
-    [Description("Onde ficam os logs completos de cada build.")]
-    [Editor(typeof(FolderPathEditor), typeof(UITypeEditor))]
-    public string LogFolder
-    {
-        get => _state.LogFolder;
-        set => _state.LogFolder = Texto.Limpo(value);
-    }
-
     // ------------------------------------------------------ padroes herdados
 
     [Category("PADRÕES DOS PROJETOS")]

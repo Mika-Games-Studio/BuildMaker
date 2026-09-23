@@ -29,38 +29,6 @@ public sealed class HostController : IAsyncDisposable
     {
         _liveLog = liveLog;
         _configPath = configPath;
-        Arquivo = new FileLog(PastaDeLog(configPath));
-    }
-
-    /// <summary>
-    /// O log em arquivo. Fica aqui, e nao dentro do host, porque ele precisa
-    /// sobreviver a parar e subir o host — e porque a janela escreve nele o
-    /// motivo de o programa estar encerrando, que acontece com o host ja parado.
-    /// </summary>
-    public FileLog Arquivo { get; }
-
-    /// <summary>
-    /// Onde gravar, lido do proprio JSON antes de qualquer validacao.
-    ///
-    /// Passar pelo binder aqui seria circular: o log tem de existir para contar
-    /// que a configuracao nao carregou. Se o arquivo nao der para ler, cai para
-    /// o padrao — que e o mesmo do <c>StateOptions.LogFolder</c>.
-    /// </summary>
-    private static string PastaDeLog(string configPath)
-    {
-        try
-        {
-            var raiz = new ConfigurationBuilder()
-                .SetBasePath(Path.GetDirectoryName(Path.GetFullPath(configPath))!)
-                .AddJsonFile(Path.GetFileName(configPath), optional: true)
-                .Build();
-
-            var pasta = raiz["State:LogFolder"];
-            if (!string.IsNullOrWhiteSpace(pasta)) return pasta;
-        }
-        catch (Exception exception) when (exception is IOException or InvalidDataException) { }
-
-        return new StateOptions().LogFolder;
     }
 
     public HostState State { get; private set; } = HostState.Parado;
@@ -152,12 +120,9 @@ public sealed class HostController : IAsyncDisposable
             .AddEnvironmentVariables("UNITYLOCALCI_");
 
         builder.Logging.ClearProviders();
+        // O unico destino do log: a memoria da janela. Ele vive enquanto o
+        // programa viver, e some com ele. Ver LiveLog.
         builder.Logging.AddProvider(new LiveLogProvider(_liveLog));
-
-        // O arquivo e lido da configuracao crua, e nao das opcoes validadas: o
-        // log precisa existir antes de tudo, inclusive para registrar que a
-        // configuracao nao passou na validacao.
-        builder.Logging.AddProvider(new FileLogProvider(Arquivo));
 
         builder.Services.AddUnityLocalCI(builder.Configuration, ProjectFiles.FolderFor(_configPath));
 

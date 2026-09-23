@@ -268,7 +268,7 @@ Tudo que precisa ser preenchido antes do primeiro uso real. Nada disso foi inven
 
 Valores que já vêm prontos e você provavelmente quer conferir: `Branch` (`HML`) e os caminhos locais em `C:\ci\` (workspace, staging, triggers). A credencial não está nessa lista porque **não é por projeto**: ela mora em `Defaults.Repository.PatCredentialName` e é preenchida pelo botão **Conectar ao GitHub**.
 
-O banco, o log do serviço e os arquivos de status não aparecem na configuração porque não precisam: vão para `%LOCALAPPDATA%\BuildMaker\`, que é onde um aplicativo do Windows guarda o que é dele. `State.DatabasePath`, `State.LogFolder` e `Scheduler.GlobalStatusFile` existem para quem quiser outro lugar, e só.
+O banco e os arquivos de status não aparecem na configuração porque não precisam: vão para `%LOCALAPPDATA%\BuildMaker\`, que é onde um aplicativo do Windows guarda o que é dele. `State.DatabasePath` e `Scheduler.GlobalStatusFile` existem para quem quiser outro lugar, e só.
 
 > **Os caminhos usam `C:\ci\`, não `D:\ci\` como na especificação**, porque esta máquina só tem o drive C:. Se a máquina de build tiver um D:, troque nos quatro lugares: `State.DatabasePath`, `State.LogFolder`, `Defaults.Publishing.StagingFolder` e `Projects[].Repository.WorkspacePath`.
 
@@ -432,7 +432,6 @@ O que é do próprio aplicativo vive onde o Windows espera:
 ```
 %LOCALAPPDATA%\BuildMaker\
 ├── state\buildmaker.db      histórico das builds
-├── logs\servico-AAAA-MM-DD.log
 └── status\
     ├── geral.json           todos os projetos num arquivo
     └── Crash.json           última build, a anterior, avisos e as 20 do histórico
@@ -442,7 +441,9 @@ O `geral.json` é reescrito quando qualquer build termina **e** quando uma entra
 
 O formato é JSON, e não texto alinhado a coluna, porque o leitor mudou. Quem quer olhar abre a janela do BuildMaker, que mostra tudo isso formatado; o que sobra para o arquivo é ser consumido por outra coisa — um script, um painel, um bot —, e para isso texto alinhado é péssimo.
 
-**O log de cada build não vai para disco.** Ele existe em memória enquanto o programa está aberto, aparece na janela linha a linha enquanto a build roda, e acaba junto com o processo. O que sobrevive é o que responde alguma pergunta depois: o registro no banco e o resumo do erro.
+**Nenhum log vai para disco** — nem o de cada build, nem o do serviço. Os dois existem em memória enquanto o programa está aberto, aparecem na janela linha a linha, e acabam junto com o processo. O que sobrevive é o que responde alguma pergunta depois: o registro da build no banco e o resumo do erro.
+
+Isso é uma troca, e vale dizer qual. O log em arquivo foi o que permitiu provar, quando o aplicativo fechava sozinho no meio das builds, que quem o encerrava era o antivírus e não ele próprio — sem arquivo, um processo morto não deixa rastro nenhum. Se voltar a acontecer, o caminho passa a ser o Visualizador de Eventos do Windows e o log do agente de segurança.
 
 A pasta `latest\` é a build mais recente já descompactada: quem só quer testar entra, roda o `rodar.bat` e joga. A troca é feita por rename de diretório — a build nova é copiada inteira para `latest.new\` e só então assume o nome —, porque copiar por cima deixaria a pasta em estado parcial por vários segundos, e quem a abrisse nesse intervalo pegaria uma build quebrada sem nenhum sinal disso.
 

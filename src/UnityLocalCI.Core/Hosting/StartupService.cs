@@ -65,8 +65,6 @@ public sealed class StartupService : IHostedService
     /// </summary>
     private void CreateLocalFolders(CiOptions configuration, IReadOnlyList<ResolvedProject> projects)
     {
-        Directory.CreateDirectory(configuration.State.LogFolder);
-
         foreach (var project in projects)
         {
             Directory.CreateDirectory(project.Publishing.StagingFolder);

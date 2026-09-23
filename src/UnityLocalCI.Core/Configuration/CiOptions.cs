@@ -51,8 +51,6 @@ public sealed class StateOptions
 {
     public string DatabasePath { get; set; } = AppPaths.DefaultDatabasePath;
 
-    /// <summary>Log do proprio servico. O log de cada build nao vai para disco.</summary>
-    public string LogFolder { get; set; } = AppPaths.DefaultLogFolder;
 }
 
 public sealed class NotificationOptions

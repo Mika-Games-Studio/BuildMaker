@@ -97,7 +97,7 @@ internal static class Program
         var configPath = ConfigFile.DefaultPath;
         var controller = new HostController(liveLog, configPath);
 
-        RegistrarEncerramento(controller.Arquivo);
+        RegistrarEncerramento(liveLog);
 
         using var form = new MainForm(controller, liveLog, configPath);
         using var tray = new TrayPresence(form, controller);
@@ -123,17 +123,18 @@ internal static class Program
     }
 
     /// <summary>
-    /// Registra no log por que o programa esta encerrando.
+    /// Registra no log da janela por que o programa esta encerrando.
     ///
-    /// Um CI que fecha sozinho no meio de uma build de quinze minutos e o pior
-    /// defeito possivel aqui, e ate agora ele nao deixava rastro: sem log em
-    /// arquivo, a unica evidencia era a build seguinte dizendo "Interrompida
-    /// por reinicializacao". Estas quatro linhas transformam "o app fechou" em
-    /// uma frase com causa.
+    /// O log vive so enquanto o programa vive, entao a linha do ProcessExit
+    /// nunca sera lida por ninguem — e as outras tres serao. Uma excecao na
+    /// thread da janela, ou uma tarefa que morreu sem dono, nao encerram o
+    /// programa: elas aparecem aqui, na aba de log, com o processo ainda de pe.
+    /// E disso que se precisa para entender o que acabou de acontecer.
     /// </summary>
-    private static void RegistrarEncerramento(FileLog arquivo)
+    private static void RegistrarEncerramento(LiveLog log)
     {
-        void Anotar(string o_que) => arquivo.Write($"{DateTime.Now:HH:mm:ss}  ENC  {"Encerramento",-22}  {o_que}");
+        void Anotar(string o_que) => log.Add(new LogLine(
+            DateTimeOffset.Now, LogLevel.Error, "Encerramento", o_que));
 
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
             Anotar($"excecao nao tratada (encerrando: {e.IsTerminating}): {e.ExceptionObject}");

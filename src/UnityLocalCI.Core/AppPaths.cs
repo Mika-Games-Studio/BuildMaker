@@ -34,12 +34,6 @@ public static class AppPaths
     /// <summary>Banco de estado, quando a configuracao nao diz outro lugar.</summary>
     public static string DefaultDatabasePath => Path.Combine(DataRoot, "state", "buildmaker.db");
 
-    /// <summary>
-    /// Log do servico, quando a configuracao nao diz outro lugar. Guarda so o
-    /// log do proprio programa: o log de cada build nao vai mais para disco.
-    /// </summary>
-    public static string DefaultLogFolder => Path.Combine(DataRoot, "logs");
-
     /// <summary>Arquivo consolidado de todos os projetos.</summary>
     public static string DefaultGlobalStatusFile => Path.Combine(StatusFolder, "geral.json");
 
