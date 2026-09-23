@@ -174,13 +174,31 @@ if (-not $SemAtalhos) {
 
     $shell = New-Object -ComObject WScript.Shell
     foreach ($pasta in $menuIniciar, $areaTrabalho) {
-        $lnk = $shell.CreateShortcut((CaminhoAtalho $pasta))
+        $caminho = CaminhoAtalho $pasta
+        $lnk = $shell.CreateShortcut($caminho)
         $lnk.TargetPath = $exe
         $lnk.WorkingDirectory = $Destino
         $lnk.IconLocation = $exe
         $lnk.Description = 'CI local para projetos Unity'
         $lnk.Save()
-        Ok $pasta
+
+        # O atalho e relido depois de gravado.
+        #
+        # Rodar o instalador de dentro de um aplicativo empacotado (MSIX, ou um
+        # terminal dentro de um) faz o Windows redirecionar escritas em
+        # %LOCALAPPDATA% para dentro do pacote, e o atalho sai apontando para
+        # uma copia em ...\AppData\Local\Packages\<pacote>\LocalCache\.
+        # A copia funciona, mas e invisivel para o resto da maquina — e o
+        # antivirus corporativo a trata como programa desconhecido, porque ela
+        # nao esta onde um programa instalado deveria estar.
+        $gravado = $shell.CreateShortcut($caminho).TargetPath
+        if ($gravado -ne $exe) {
+            Aviso "o atalho em $pasta ficou apontando para:"
+            Aviso "   $gravado"
+            Aviso "Rode este instalador num PowerShell comum, fora de terminal embutido em aplicativo."
+        } else {
+            Ok $pasta
+        }
     }
     [Runtime.InteropServices.Marshal]::ReleaseComObject($shell) | Out-Null
 }
