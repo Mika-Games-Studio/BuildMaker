@@ -1,10 +1,12 @@
 using Microsoft.Extensions.Logging;
 using UnityLocalCI.Core.Git;
+using UnityLocalCI.Core.Unity;
 
 namespace UnityLocalCI.Core.Pipeline;
 
 /// <summary>
-/// Etapa 1: fetch, reset --hard no sha e clean preservando o cache do Unity.
+/// Etapa 1: fetch, reset --hard no sha, clean preservando o cache do Unity, e o
+/// Builder.cs escrito dentro do projeto.
 /// O workspace e persistente de proposito: build limpa e cerca de 3x mais lenta.
 /// </summary>
 public sealed class SyncStep : IBuildStep
@@ -37,11 +39,25 @@ public sealed class SyncStep : IBuildStep
             await _git.CheckoutAsync(context.Git, context.Commit.Sha, ct).ConfigureAwait(false);
 
             _logger.LogInformation("Workspace sincronizado em {Sha}.", context.Commit.ShortSha);
+
+            // Depois do checkout, nunca antes: o clean nao remove o script (ele
+            // esta nas exclusoes), mas um clone novo chega sem ele.
+            if (BuilderScript.Deploy(context.Git.WorkspacePath))
+                _logger.LogInformation("Builder.cs escrito em {Caminho}.", BuilderScript.RelativePath);
+
             return StepResult.Ok;
         }
         catch (GitCommandException ex)
         {
             return StepResult.Fail($"Falha ao sincronizar o workspace: {ex.Message}{Environment.NewLine}{ex.StandardError}");
+        }
+        catch (IOException ex)
+        {
+            return StepResult.Fail($"Falha ao escrever o {BuilderScript.RelativePath} no projeto: {ex.Message}");
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StepResult.Fail($"Sem permissao para escrever o {BuilderScript.RelativePath} no projeto: {ex.Message}");
         }
     }
 }
