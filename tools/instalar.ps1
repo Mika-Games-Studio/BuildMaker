@@ -1,10 +1,18 @@
 ﻿<#
     Instala o BuildMaker nesta maquina.
 
-    Nao pede administrador: instala em %LOCALAPPDATA%, cria os atalhos do menu
-    Iniciar e da area de trabalho, registra o programa em Aplicativos Instalados
-    (para aparecer na busca do Windows e poder ser desinstalado por la) e liga o
-    inicio automatico pela chave Run do usuario.
+    Nao pede administrador: instala em %LOCALAPPDATA%\Programs\BuildMaker, cria
+    os atalhos do menu Iniciar e da area de trabalho, registra o programa em
+    Aplicativos Instalados (para aparecer na busca do Windows e poder ser
+    desinstalado por la) e liga o inicio automatico pela chave Run do usuario.
+
+    Em Programs\, e nao direto em %LOCALAPPDATA%\: e ali que o VS Code e o
+    Rider colocam os seus, e a pasta separa o programa dos dados. Os dados do
+    BuildMaker ficam em %LOCALAPPDATA%\BuildMaker, que esta noutro lugar de
+    proposito — desinstalar apaga o programa e nao toca no historico.
+
+    Instalar em C:\Program Files exigiria administrador; instalacao por usuario
+    vive no perfil do usuario, e e assim que todo aplicativo por usuario faz.
 
     A chave Run, e nao uma tarefa agendada, porque e ela que aparece na aba
     Inicializar do Gerenciador de Tarefas — onde qualquer um desliga o inicio
@@ -26,7 +34,7 @@ param(
     [string]$Origem,
     [string]$DeUrl,
     [string]$Token,
-    [string]$Destino = (Join-Path $env:LOCALAPPDATA 'UnityLocalCI'),
+    [string]$Destino = (Join-Path $env:LOCALAPPDATA 'Programs\BuildMaker'),
     [switch]$SemAtalhos,
     [switch]$SemInicioAutomatico,
     [switch]$Desinstalar
@@ -48,6 +56,10 @@ $NomeTarefa    = 'BuildMaker'
 # HKCU porque a instalacao e por usuario, em %LOCALAPPDATA%: registrar em HKLM
 # anunciaria para todos os usuarios da maquina um programa que so existe para um.
 $ChaveDesinstalar = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\BuildMaker'
+
+# Onde as versoes anteriores instalavam. A configuracao e os projetos do usuario
+# vivem la dentro e precisam vir junto; o resto e programa, e vai embora.
+$DestinoAntigo = Join-Path $env:LOCALAPPDATA 'UnityLocalCI'
 
 function Passo($t) { Write-Host ""; Write-Host "== $t" -ForegroundColor Cyan }
 function Ok($t)    { Write-Host "   [ok] $t" }
@@ -103,9 +115,13 @@ if ($Desinstalar) {
         }
     }
 
-    if (Test-Path $Destino) {
-        Remove-Item $Destino -Recurse -Force
-        Ok "arquivos removidos de $Destino"
+    # Os dois lugares: o atual e o das versoes anteriores. Uma maquina que nunca
+    # reinstalou depois da mudanca so tem o antigo.
+    foreach ($pasta in $Destino, $DestinoAntigo) {
+        if (Test-Path $pasta) {
+            Remove-Item $pasta -Recurse -Force
+            Ok "arquivos removidos de $pasta"
+        }
     }
 
     Write-Host ""
@@ -179,6 +195,30 @@ Get-Process -Name 'UnityLocalCI' -ErrorAction SilentlyContinue | ForEach-Object 
     if (-not $_.HasExited) { $_ | Stop-Process -Force }
 }
 
+# Migracao da instalacao anterior, que ficava direto em %LOCALAPPDATA%.
+#
+# So a configuracao e os projetos vem junto: o resto daquela pasta e programa,
+# e o programa esta sendo reinstalado. Isto acontece antes de qualquer copia,
+# para os arquivos do usuario chegarem ao destino novo como se ja estivessem la.
+if ((Test-Path $DestinoAntigo) -and ($DestinoAntigo -ne $Destino)) {
+    Passo "Migrando a instalacao anterior"
+
+    New-Item -ItemType Directory -Path $Destino -Force | Out-Null
+
+    $configAntigo = Join-Path $DestinoAntigo 'appsettings.json'
+    if ((Test-Path $configAntigo) -and -not (Test-Path (Join-Path $Destino 'appsettings.json'))) {
+        Copy-Item $configAntigo $Destino -Force
+        Ok "appsettings.json trazido da instalacao anterior"
+    }
+
+    $projetosAntigos = Join-Path $DestinoAntigo 'projetos'
+    if ((Test-Path $projetosAntigos) -and -not (Test-Path (Join-Path $Destino 'projetos'))) {
+        Copy-Item $projetosAntigos $Destino -Recurse -Force
+        $quantos = @(Get-ChildItem $projetosAntigos -Filter *.json -ErrorAction SilentlyContinue).Count
+        Ok "$quantos projeto(s) trazidos da instalacao anterior"
+    }
+}
+
 # A configuracao do usuario nao pode ser sobrescrita por uma atualizacao.
 $configExistente = Join-Path $Destino 'appsettings.json'
 $preservada = $null
@@ -208,6 +248,19 @@ if ($temporario -and (Test-Path $temporario)) { Remove-Item $temporario -Recurse
 
 $exe = Join-Path $Destino $NomeExe
 Ok $exe
+
+# A pasta antiga sai depois que a nova esta pronta, e nao antes: se a copia
+# falhar no meio, o que existia continua de pe.
+if ((Test-Path $DestinoAntigo) -and ($DestinoAntigo -ne $Destino) -and (Test-Path $exe)) {
+    try {
+        Remove-Item $DestinoAntigo -Recurse -Force
+        Ok "instalacao anterior removida de $DestinoAntigo"
+    } catch {
+        Aviso "nao foi possivel remover a instalacao anterior em ${DestinoAntigo}:"
+        Aviso "   $($_.Exception.Message)"
+        Aviso "Ela nao atrapalha — os atalhos ja apontam para a nova —, mas ocupa espaco."
+    }
+}
 
 # ----------------------------------------------------------------- atalhos
 

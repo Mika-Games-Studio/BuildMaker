@@ -38,7 +38,11 @@ Ou, para instalar direto de uma release publicada no GitHub, sem baixar nada à 
 powershell -ExecutionPolicy Bypass -File tools\instalar.ps1 -DeUrl https://.../UnityLocalCI.zip
 ```
 
-Instala em `%LOCALAPPDATA%\UnityLocalCI`, cria atalho no menu Iniciar e na área de trabalho, e registra o programa em **Configurações → Aplicativos** — é de lá que ele aparece na busca do Windows e pode ser desinstalado. Uma reinstalação por cima preserva o `appsettings.json` e os projetos cadastrados.
+Instala em `%LOCALAPPDATA%\Programs\BuildMaker`, cria atalho no menu Iniciar e na área de trabalho, e registra o programa em **Configurações → Aplicativos** — é de lá que ele aparece na busca do Windows e pode ser desinstalado. Uma reinstalação por cima preserva o `appsettings.json` e os projetos cadastrados.
+
+**O programa e os dados ficam separados:** o binário em `Programs\BuildMaker`, o histórico e o status em `%LOCALAPPDATA%\BuildMaker`. É onde o VS Code e o Rider põem os seus, e é o que faz desinstalar apagar o programa sem tocar no histórico. Instalar em `C:\Program Files` exigiria administrador; instalação por usuário vive no perfil do usuário.
+
+Versões anteriores instalavam direto em `%LOCALAPPDATA%\UnityLocalCI`. O instalador migra a configuração e os projetos de lá e remove a pasta antiga.
 
 **Não pede administrador**, e o programa também não: ele roda com o privilégio de quem o abriu, sem UAC. O início automático usa a chave `Run` do usuário, que é a que aparece na aba **Inicializar** do Gerenciador de Tarefas — onde se desliga com um clique.
 
