@@ -13,75 +13,142 @@ using UnityLocalCI.Core.Hosting;
 //   --service       roda sem interface, para o Windows Service
 //
 // O servico e o mesmo nos dois casos: o que muda e so quem o hospeda.
-
-var headless = args.Contains("--service", StringComparer.OrdinalIgnoreCase)
-               || WindowsServiceHelpers.IsWindowsService();
-
-return headless ? await RunHeadlessAsync(args) : RunWindow();
-
-static async Task<int> RunHeadlessAsync(string[] args)
+internal static class Program
 {
-    var builder = Host.CreateApplicationBuilder(args);
-
-    builder.Configuration
-        .SetBasePath(AppContext.BaseDirectory)
-        .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
-        .AddJsonFile("appsettings.local.json", optional: true, reloadOnChange: true)
-        .AddEnvironmentVariables("UNITYLOCALCI_");
-
-    builder.Services.AddWindowsService(options => options.ServiceName = "UnityLocalCI");
-    builder.Services.AddUnityLocalCI(builder.Configuration);
-
-    var host = builder.Build();
-
-    try
+    /// <summary>
+    /// STAThread nao e decoracao: as caixas de selecao de pasta e de arquivo do
+    /// Windows sao objetos COM do shell, e COM do shell so pode ser chamado de
+    /// uma thread STA. Numa thread MTA a chamada atravessa o marshalling do
+    /// sistema e trava o aplicativo — e, com o shell no meio, arrasta o resto
+    /// da maquina junto.
+    ///
+    /// E por isto que o ponto de entrada voltou a ser um Main de verdade, e nao
+    /// instrucoes de nivel superior: o Main gerado a partir delas usava 'await',
+    /// virava async, e um Main async nao pode ser STA.
+    /// </summary>
+    [STAThread]
+    private static int Main(string[] args)
     {
-        // Validacao forcada antes de o host subir: assim a configuracao invalida
-        // sai como uma lista de itens a corrigir, e nao como um stack trace.
-        _ = host.Services.GetRequiredService<IOptions<CiOptions>>().Value;
-    }
-    catch (OptionsValidationException exception)
-    {
-        var logger = host.Services.GetRequiredService<ILogger<Program>>();
-        foreach (var failure in exception.Failures)
-            logger.LogCritical("Configuracao invalida: {Failure}", failure);
+        var headless = args.Contains("--service", StringComparer.OrdinalIgnoreCase)
+                       || WindowsServiceHelpers.IsWindowsService();
 
-        return 1;
+        if (!headless) return RunWindow();
+
+        // Fora da thread STA: o host nao precisa dela, e uma thread STA parada
+        // esperando uma tarefa, sem bombear mensagens, e armadilha conhecida de
+        // COM.
+        return Task.Run(() => RunHeadlessAsync(args)).GetAwaiter().GetResult();
     }
 
-    await host.RunAsync();
-    return 0;
-}
+    private static async Task<int> RunHeadlessAsync(string[] args)
+    {
+        var configPath = ConfigFile.DefaultPath;
 
-static int RunWindow()
-{
-    ApplicationConfiguration.Initialize();
+        // Uma vez, e so na primeira vez: projetos que ainda estejam dentro do
+        // appsettings.json passam a ter arquivo proprio.
+        ProjectFiles.MigrateFromAppSettings(configPath);
 
-    // Modo escuro do proprio WinForms. E o que escurece o que o tema nao
-    // alcanca: barras de rolagem, caixas de dialogo e menus de contexto, que
-    // sao desenhados pelo Windows e nao pelo aplicativo. Se um dia a API mudar,
-    // o pior caso e voltarem a ser claros — o resto da janela nao depende dela.
+        var builder = Host.CreateApplicationBuilder(args);
+
+        builder.Configuration
+            .SetBasePath(AppContext.BaseDirectory)
+            .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+            .AddJsonFile("appsettings.local.json", optional: true, reloadOnChange: true)
+            .AddEnvironmentVariables("UNITYLOCALCI_");
+
+        builder.Services.AddWindowsService(options => options.ServiceName = "UnityLocalCI");
+        builder.Services.AddUnityLocalCI(builder.Configuration, ProjectFiles.FolderFor(configPath));
+
+        var host = builder.Build();
+
+        try
+        {
+            // Validacao forcada antes de o host subir: assim a configuracao invalida
+            // sai como uma lista de itens a corrigir, e nao como um stack trace.
+            _ = host.Services.GetRequiredService<IOptions<CiOptions>>().Value;
+        }
+        catch (OptionsValidationException exception)
+        {
+            var logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("UnityLocalCI");
+            foreach (var failure in exception.Failures)
+                logger.LogCritical("Configuracao invalida: {Failure}", failure);
+
+            return 1;
+        }
+
+        await host.RunAsync();
+        return 0;
+    }
+
+    private static int RunWindow()
+    {
+        ApplicationConfiguration.Initialize();
+
+        // Modo escuro do proprio WinForms. E o que escurece o que o tema nao
+        // alcanca: barras de rolagem, caixas de dialogo e menus de contexto, que
+        // sao desenhados pelo Windows e nao pelo aplicativo. Se um dia a API mudar,
+        // o pior caso e voltarem a ser claros — o resto da janela nao depende dela.
 #pragma warning disable WFO5001 // A API ainda e marcada como experimental.
-    try { Application.SetColorMode(SystemColorMode.Dark); }
-    catch (Exception) { /* Windows sem suporte: segue com o tema proprio */ }
+        try { Application.SetColorMode(SystemColorMode.Dark); }
+        catch (Exception) { /* Windows sem suporte: segue com o tema proprio */ }
 #pragma warning restore WFO5001
 
-    var liveLog = new LiveLog();
-    var configPath = ConfigFile.DefaultPath;
-    var controller = new HostController(liveLog, configPath);
+        var liveLog = new LiveLog();
+        var configPath = ConfigFile.DefaultPath;
+        var controller = new HostController(liveLog, configPath);
 
-    using var form = new MainForm(controller, liveLog, configPath);
-    using var tray = new TrayPresence(form, controller);
-    form.Tray = tray;
+        RegistrarEncerramento(liveLog);
 
-    // O host sobe junto com a janela. Se a configuracao estiver invalida, ele
-    // nao sobe e a janela mostra a lista de itens a corrigir, em vez de o
-    // programa morrer sem dizer nada.
-    _ = controller.StartAsync();
+        using var form = new MainForm(controller, liveLog, configPath);
+        using var tray = new TrayPresence(form, controller);
+        form.Tray = tray;
 
-    Application.Run(form);
+        // Fora da thread da janela. O primeiro 'await' do StartAsync costuma
+        // completar na hora, e nesse caso a montagem do host, a abertura do
+        // banco e a criacao dos watchers rodariam aqui mesmo — com a janela
+        // congelada ate o fim.
+        _ = Task.Run(() => controller.StartAsync());
 
-    controller.DisposeAsync().AsTask().GetAwaiter().GetResult();
-    return 0;
+        Application.Run(form);
+
+        // O contexto do WinForms sai de cena antes da espera: qualquer
+        // continuacao que quisesse voltar para a thread da janela ficaria presa
+        // para sempre, porque o laco de mensagens ja acabou. E com prazo, para
+        // um encerramento lento nunca virar um processo que nao morre.
+        SynchronizationContext.SetSynchronizationContext(null);
+
+        return Task.Run(async () => await controller.DisposeAsync()).Wait(TimeSpan.FromSeconds(20))
+            ? 0
+            : 1;
+    }
+
+    /// <summary>
+    /// Registra no log da janela por que o programa esta encerrando.
+    ///
+    /// O log vive so enquanto o programa vive, entao a linha do ProcessExit
+    /// nunca sera lida por ninguem — e as outras tres serao. Uma excecao na
+    /// thread da janela, ou uma tarefa que morreu sem dono, nao encerram o
+    /// programa: elas aparecem aqui, na aba de log, com o processo ainda de pe.
+    /// E disso que se precisa para entender o que acabou de acontecer.
+    /// </summary>
+    private static void RegistrarEncerramento(LiveLog log)
+    {
+        void Anotar(string o_que) => log.Add(new LogLine(
+            DateTimeOffset.Now, LogLevel.Error, "Encerramento", o_que));
+
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+            Anotar($"excecao nao tratada (encerrando: {e.IsTerminating}): {e.ExceptionObject}");
+
+        // Excecao na thread da janela. O WinForms mostraria uma caixa de dialogo
+        // e seguiria; registrar antes e o que permite saber que ela existiu.
+        Application.ThreadException += (_, e) =>
+            Anotar($"excecao na thread da janela: {e.Exception}");
+
+        TaskScheduler.UnobservedTaskException += (_, e) =>
+            Anotar($"tarefa com excecao sem dono: {e.Exception}");
+
+        Application.ApplicationExit += (_, _) => Anotar("laco de mensagens encerrado (Application.Exit ou janela fechada)");
+
+        AppDomain.CurrentDomain.ProcessExit += (_, _) => Anotar("processo saindo");
+    }
 }
-

@@ -89,7 +89,6 @@ function Garantir($caminho, $rotulo) {
     }
 }
 
-Garantir $json.State.LogFolder 'logs'
 Garantir (Split-Path $json.State.DatabasePath -Parent) 'estado'
 Garantir $json.Defaults.Publishing.StagingFolder 'staging'
 
@@ -167,7 +166,8 @@ Start-Sleep -Seconds 5
 $servico = Get-Service -Name $NomeServico
 if ($servico.Status -ne 'Running') {
     Aviso "O servico nao ficou em execucao (status: $($servico.Status))."
-    Aviso "Veja o motivo em: $($json.State.LogFolder), ou no Event Log em Application."
+    Aviso "Veja o motivo no Event Log em Application. O log do proprio programa vive"
+    Aviso "so em memoria, na janela, e nao sobrevive ao servico nao subir."
     exit 1
 }
 

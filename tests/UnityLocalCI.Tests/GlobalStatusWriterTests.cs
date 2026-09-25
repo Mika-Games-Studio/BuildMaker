@@ -1,4 +1,6 @@
+using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
+using UnityLocalCI.Core;
 using UnityLocalCI.Core.Configuration;
 using UnityLocalCI.Core.Publishing;
 using UnityLocalCI.Core.Queue;
@@ -12,18 +14,30 @@ public class GlobalStatusWriterTests : IDisposable
     private readonly string _root = Path.Combine(
         Path.GetTempPath(), "unitylocalci-tests", Guid.NewGuid().ToString("N"));
 
-    private readonly string _statusFile;
+    /// <summary>
+    /// O caminho e fixo: %LOCALAPPDATA%\BuildMaker\status\geral.json. Nao ha
+    /// mais como apontar para outro lugar — era essa configuracao que, com um
+    /// caminho relativo, fazia o programa escrever dentro da propria pasta de
+    /// instalacao.
+    /// </summary>
+    private readonly string _statusFile = AppPaths.DefaultGlobalStatusFile;
+
+    /// <summary>O arquivo de verdade do aplicativo, para o teste devolve-lo como estava.</summary>
+    private readonly string? _conteudoAnterior;
+
     private readonly InMemoryBuildStore _store = new();
     private readonly CiOptions _options;
 
     public GlobalStatusWriterTests()
     {
         Directory.CreateDirectory(_root);
-        _statusFile = Path.Combine(_root, "_STATUS-GERAL.txt");
+
+        _conteudoAnterior = File.Exists(_statusFile) ? File.ReadAllText(_statusFile) : null;
+        if (File.Exists(_statusFile)) File.Delete(_statusFile);
 
         _options = new CiOptions
         {
-            Scheduler = new SchedulerOptions { MaxConcurrentBuilds = 2, GlobalStatusFile = _statusFile },
+            Scheduler = new SchedulerOptions { MaxConcurrentBuilds = 2 },
             Defaults = new ProjectDefaults
             {
                 Unity = new UnityOptions { EditorVersion = "6000.0.47f1" },
@@ -49,7 +63,15 @@ public class GlobalStatusWriterTests : IDisposable
 
     public void Dispose()
     {
-        try { if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true); }
+        try
+        {
+            // O teste nao pode deixar a maquina diferente do que encontrou: este
+            // e o arquivo de verdade do aplicativo.
+            if (_conteudoAnterior is not null) File.WriteAllText(_statusFile, _conteudoAnterior);
+            else if (File.Exists(_statusFile)) File.Delete(_statusFile);
+
+            if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true);
+        }
         catch (IOException) { /* limpeza best effort */ }
     }
 
@@ -87,25 +109,38 @@ public class GlobalStatusWriterTests : IDisposable
         return id;
     }
 
+    /// <summary>O documento lido do arquivo, ja como JSON.</summary>
+    private async Task<JsonElement> LerAsync()
+        => JsonDocument.Parse(await File.ReadAllTextAsync(_statusFile)).RootElement;
+
+    private async Task<JsonElement> ProjetoAsync(string nome)
+    {
+        var raiz = await LerAsync();
+        return raiz.GetProperty("Projetos")
+            .EnumerateArray()
+            .Single(p => p.GetProperty("Projeto").GetString() == nome);
+    }
+
     [Fact]
-    public async Task Escreve_uma_linha_por_projeto_configurado()
+    public async Task Escreve_uma_entrada_por_projeto_configurado()
     {
         await SeedFinishedAsync("Crash", BuildStatus.Succeeded);
         await SeedFinishedAsync("Rocket", BuildStatus.Failed);
 
         await Create().WriteAsync(default);
 
-        var text = await File.ReadAllTextAsync(_statusFile);
+        var projetos = (await LerAsync()).GetProperty("Projetos");
 
-        Assert.Contains("CI LOCAL", text);
-        Assert.Contains("Crash", text);
-        Assert.Contains("Mines", text);
-        Assert.Contains("Rocket", text);
-        Assert.Contains("nunca", text); // Mines ainda nao construiu
+        Assert.Equal(3, projetos.GetArrayLength());
+        Assert.Equal("SUCESSO", (await ProjetoAsync("Crash")).GetProperty("UltimaBuild").GetProperty("Status").GetString());
+        Assert.Equal("FALHOU", (await ProjetoAsync("Rocket")).GetProperty("UltimaBuild").GetProperty("Status").GetString());
+
+        // Mines ainda nao construiu: o campo existe como null, e nao some.
+        Assert.Equal(JsonValueKind.Null, (await ProjetoAsync("Mines")).GetProperty("UltimaBuild").ValueKind);
     }
 
     [Fact]
-    public async Task Build_em_execucao_aparece_como_construindo()
+    public async Task Build_em_execucao_aparece_como_em_execucao()
     {
         await _store.CreateAsync(new BuildRecord
         {
@@ -119,11 +154,10 @@ public class GlobalStatusWriterTests : IDisposable
 
         await Create().WriteAsync(default);
 
-        var line = Assert.Single(
-            await File.ReadAllLinesAsync(_statusFile),
-            l => l.StartsWith("Mines"));
+        var mines = await ProjetoAsync("Mines");
 
-        Assert.Contains("construindo", line);
+        Assert.True(mines.GetProperty("EmExecucao").GetBoolean());
+        Assert.NotEqual(JsonValueKind.Null, mines.GetProperty("IniciouEm").ValueKind);
     }
 
     [Fact]
@@ -136,17 +170,15 @@ public class GlobalStatusWriterTests : IDisposable
         var writer = Create();
 
         // Muito mais que duas, de proposito: sem o lock, o arquivo sai truncado
-        // ou com duas versoes intercaladas, e com ele toda leitura e valida.
+        // ou com duas versoes intercaladas. Em JSON isso e ainda mais direto de
+        // verificar — um arquivo meio escrito simplesmente nao parseia.
         await Task.WhenAll(Enumerable.Range(0, 40).Select(_ => writer.WriteAsync(default)));
 
-        var lines = await File.ReadAllLinesAsync(_statusFile);
+        var projetos = (await LerAsync()).GetProperty("Projetos");
 
-        Assert.StartsWith("CI LOCAL", lines[0]);
-        Assert.Single(lines, l => l.StartsWith("PROJETO"));
-        Assert.Single(lines, l => l.StartsWith("Crash"));
-        Assert.Single(lines, l => l.StartsWith("Mines"));
-        Assert.Single(lines, l => l.StartsWith("Rocket"));
-        Assert.Single(lines, l => l.StartsWith("Fila:"));
+        Assert.Equal(3, projetos.GetArrayLength());
+        foreach (var nome in new[] { "Crash", "Mines", "Rocket" })
+            Assert.Single(projetos.EnumerateArray(), p => p.GetProperty("Projeto").GetString() == nome);
     }
 
     [Fact]
@@ -183,17 +215,16 @@ public class GlobalStatusWriterTests : IDisposable
         scheduler.Release();
         await Task.WhenAll(slow, fast);
 
-        var mines = Assert.Single(await File.ReadAllLinesAsync(_statusFile), l => l.StartsWith("Mines"));
-        Assert.DoesNotContain("nunca", mines);
-        Assert.Contains("ok", mines);
+        var mines = await ProjetoAsync("Mines");
+        Assert.Equal("SUCESSO", mines.GetProperty("UltimaBuild").GetProperty("Status").GetString());
     }
 
     [Fact]
-    public async Task Rodape_nao_contradiz_as_linhas_de_projeto()
+    public async Task O_contador_nao_contradiz_os_projetos()
     {
         // O arquivo e reescrito de dentro do pipeline, quando a build que acabou
-        // ainda ocupa a vaga no scheduler. Se o rodape viesse do contador do
-        // scheduler, diria "1 em execução" logo abaixo de uma linha FALHOU.
+        // ainda ocupa a vaga no scheduler. Se o contador viesse do scheduler,
+        // diria "1 em execucao" num arquivo onde nenhum projeto esta rodando.
         await SeedFinishedAsync("Crash", BuildStatus.Failed);
 
         var writer = new GlobalStatusWriter(
@@ -205,10 +236,13 @@ public class GlobalStatusWriterTests : IDisposable
 
         await writer.WriteAsync(default);
 
-        var text = await File.ReadAllTextAsync(_statusFile);
+        var raiz = await LerAsync();
 
-        Assert.Contains("Em execução: 0 de 2", text);
-        Assert.DoesNotContain("construindo", text);
+        Assert.Equal(0, raiz.GetProperty("EmExecucao").GetInt32());
+        Assert.Equal(2, raiz.GetProperty("MaximoSimultaneo").GetInt32());
+        Assert.DoesNotContain(
+            raiz.GetProperty("Projetos").EnumerateArray(),
+            p => p.GetProperty("EmExecucao").GetBoolean());
     }
 
     [Fact]
@@ -222,24 +256,20 @@ public class GlobalStatusWriterTests : IDisposable
         Assert.Empty(Directory.GetFiles(_root, "*.tmp"));
     }
 
+    /// <summary>
+    /// O arquivo vai sempre para a pasta do aplicativo. Nao ha caminho a
+    /// configurar: era essa configuracao que, com um caminho relativo, fazia o
+    /// programa escrever dentro da propria pasta de instalacao.
+    /// </summary>
     [Fact]
-    public async Task Destino_indisponivel_nao_derruba_a_build()
+    public async Task Escreve_sempre_na_pasta_do_aplicativo()
     {
-        // Um arquivo no lugar da pasta e o que se ve quando o compartilhamento cai.
-        _options.Scheduler.GlobalStatusFile = Path.Combine(_root, "arquivo.txt", "_STATUS-GERAL.txt");
-        await File.WriteAllTextAsync(Path.Combine(_root, "arquivo.txt"), "nao sou uma pasta");
-
-        await Create().WriteAsync(default);
-    }
-
-    [Fact]
-    public async Task Sem_caminho_configurado_nao_escreve_nada()
-    {
-        _options.Scheduler.GlobalStatusFile = null;
+        await SeedFinishedAsync("Crash", BuildStatus.Succeeded);
 
         await Create().WriteAsync(default);
 
-        Assert.False(File.Exists(_statusFile));
+        Assert.StartsWith(AppPaths.StatusFolder, _statusFile, StringComparison.OrdinalIgnoreCase);
+        Assert.True(File.Exists(_statusFile));
     }
 }
 
@@ -262,6 +292,10 @@ public sealed class BlockingSnapshotScheduler : IBuildScheduler
         ResolvedProject project, UnityLocalCI.Core.Git.CommitInfo commit, BuildTrigger trigger, CancellationToken ct)
         => Task.FromResult<long?>(1);
 
+    public Task<bool> CancelAsync(long buildId, CancellationToken ct) => Task.FromResult(false);
+
+    public bool Paused { get; set; }
+
     public SchedulerSnapshot Snapshot()
     {
         if (Interlocked.Exchange(ref _blockNext, 0) == 1)
@@ -281,6 +315,10 @@ public sealed class StubSnapshotScheduler : IBuildScheduler
     public Task<long?> EnqueueAsync(
         ResolvedProject project, UnityLocalCI.Core.Git.CommitInfo commit, BuildTrigger trigger, CancellationToken ct)
         => Task.FromResult<long?>(1);
+
+    public Task<bool> CancelAsync(long buildId, CancellationToken ct) => Task.FromResult(false);
+
+    public bool Paused { get; set; }
 
     public SchedulerSnapshot Snapshot() => Result;
 }

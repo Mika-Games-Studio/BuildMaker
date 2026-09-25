@@ -7,6 +7,14 @@
     <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.5" />
   </ItemGroup>
   <ItemGroup>
+    <!--
+      O Builder.cs viaja dentro do binario. O passo de Sync o escreve dentro do
+      projeto Unity, entao o repositorio de cada jogo nao precisa versionar um
+      arquivo do CI nem ficar em sincronia com ele. Ver BuilderScript.
+    -->
+    <EmbeddedResource Include="..\..\unity\Builder.cs" LogicalName="UnityLocalCI.Builder.cs" />
+  </ItemGroup>
+  <ItemGroup>
     <InternalsVisibleTo Include="UnityLocalCI.Tests" />
   </ItemGroup>
 </Project>

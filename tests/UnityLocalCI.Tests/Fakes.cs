@@ -36,6 +36,7 @@ public sealed class FakeCredentialStore : ICredentialStore
     public void Set(string name, string value) => _values[name] = value;
     public bool Exists(string credentialName) => _values.ContainsKey(credentialName);
     public string? Read(string credentialName) => _values.TryGetValue(credentialName, out var v) ? v : null;
+    public void Write(string credentialName, string secret) => _values[credentialName] = secret;
 }
 
 public sealed class FakeSystemResources : ISystemResources
@@ -95,6 +96,11 @@ public sealed class FakeGitClient : IGitClient
         CheckedOut.Add(sha);
         return Task.CompletedTask;
     }
+
+    public List<string> RemoteBranches { get; } = ["HML", "main"];
+
+    public Task<IReadOnlyList<string>> ListRemoteBranchesAsync(GitContext context, CancellationToken ct)
+        => Task.FromResult<IReadOnlyList<string>>(RemoteBranches);
 }
 
 public sealed class RecordingScheduler : IBuildScheduler
@@ -111,6 +117,13 @@ public sealed class RecordingScheduler : IBuildScheduler
     }
 
     public SchedulerSnapshot Snapshot() => new(0, 0, 1);
+
+    public Task<bool> CancelAsync(long buildId, CancellationToken ct) => Task.FromResult(Cancelled.Add(buildId));
+
+    /// <summary>Ids que alguem mandou cancelar.</summary>
+    public HashSet<long> Cancelled { get; } = [];
+
+    public bool Paused { get; set; }
 }
 
 public static class TestProjects
@@ -135,7 +148,38 @@ public static class TestProjects
             ManualTriggerFile: null,
             Watcher: new ResolvedWatcher(pollSeconds, debounceSeconds, 8081),
             Unity: new ResolvedUnity("6000.0.47f1", "WebGL", "Builder.PerformBuild", 90, Array.Empty<string>()),
-            Packaging: new ResolvedPackaging("{project}-{branch}-{date}-{sha}.zip", true),
-            Publishing: new ResolvedPublishing(staging, artifactFolder, true, true),
+            Packaging: new ResolvedPackaging("{project}-{branch}-{date}-{sha}.zip"),
+            Publishing: new ResolvedPublishing(staging, artifactFolder, true),
             Retention: new ResolvedRetention(10, minFreeDiskGb));
+}
+
+/// <summary>
+/// Cliente de git que so registra o que foi pedido. Serve para provar de qual
+/// credencial a tela de configuracao se serve, sem tocar em rede.
+/// </summary>
+public sealed class CapturingGitClient : IGitClient
+{
+    public ManualResetEventSlim Chamado { get; } = new(false);
+    public GitContext? UltimoContexto { get; private set; }
+    public List<string> Branches { get; } = ["main"];
+
+    public Task<SyncOutcome> EnsureWorkspaceAsync(GitContext context, CancellationToken ct)
+        => Task.FromResult(new SyncOutcome(false));
+
+    public Task FetchAsync(GitContext context, CancellationToken ct) => Task.CompletedTask;
+
+    public Task<string> GetRemoteHeadShaAsync(GitContext context, CancellationToken ct)
+        => Task.FromResult(new string('a', 40));
+
+    public Task<CommitInfo> GetCommitInfoAsync(GitContext context, string sha, CancellationToken ct)
+        => Task.FromResult(new CommitInfo(sha, "autor", "mensagem"));
+
+    public Task CheckoutAsync(GitContext context, string sha, CancellationToken ct) => Task.CompletedTask;
+
+    public Task<IReadOnlyList<string>> ListRemoteBranchesAsync(GitContext context, CancellationToken ct)
+    {
+        UltimoContexto = context;
+        Chamado.Set();
+        return Task.FromResult<IReadOnlyList<string>>(Branches.ToArray());
+    }
 }

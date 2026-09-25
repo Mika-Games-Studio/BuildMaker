@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Logging.Abstractions;
 using UnityLocalCI.Core.Configuration;
 using UnityLocalCI.Core.Hosting;
 using UnityLocalCI.Core.Secrets;
@@ -18,9 +17,22 @@ public sealed class ConfigPanel : UserControl
     private readonly string _configPath;
     private readonly HostController _controller;
     private readonly ICredentialStore _credentials = new WindowsCredentialStore();
+    private readonly BranchCatalog _branches;
 
     private readonly PropertyGrid _schedulerGrid = NewPropertyGrid();
     private readonly PropertyGrid _projectGrid = NewPropertyGrid();
+
+    private readonly Label _githubStatus = new() { AutoSize = false };
+    private readonly AccountCard _conta = new();
+    private readonly StatRow _numeros = new();
+
+    /// <summary>Credencial cuja conta ja foi buscada, para nao repetir a consulta.</summary>
+    private string? _contaConsultada;
+    private CancellationTokenSource? _buscaDaConta;
+
+    /// <summary>Respostas que chegaram antes de a janela ter handle.</summary>
+    private readonly List<Action> _espera = [];
+    private bool _prontoParaUi;
 
     private readonly DarkListBox _projectList = new() { Dock = DockStyle.Fill };
 
@@ -39,6 +51,7 @@ public sealed class ConfigPanel : UserControl
     {
         _configPath = configPath;
         _controller = controller;
+        _branches = new BranchCatalog(_credentials);
 
         BuildLayout();
         Reload();
@@ -66,21 +79,50 @@ public sealed class ConfigPanel : UserControl
             BackColor = Theme.Canvas,
         };
 
+        // Tres fileiras: a coluna da lista e estreita, e o botao que nao
+        // coubesse sairia da area visivel sem deixar rastro.
         var listaBotoes = new FlowLayoutPanel
         {
             Dock = DockStyle.Bottom,
-            Height = 40,
+            Height = 84,
             Padding = new Padding(0, 8, 0, 0),
             BackColor = Theme.Surface,
         };
 
-        var adicionar = new PillButton("Adicionar") { Width = 96, Backdrop = Theme.Surface };
-        var remover = new PillButton("Remover", ButtonKind.Ghost) { Width = 92, Backdrop = Theme.Surface };
+        var vincular = new PillButton("Vincular projeto Unity", ButtonKind.Primary)
+        {
+            Width = 168,
+            Backdrop = Theme.Surface,
+        };
+        var adicionar = new PillButton("Vazio") { Width = 76, Backdrop = Theme.Surface, Margin = new Padding(0, 6, 8, 0) };
+        var remover = new PillButton("Remover", ButtonKind.Ghost) { Width = 92, Backdrop = Theme.Surface, Margin = new Padding(0, 6, 8, 0) };
+
+        vincular.Click += (_, _) => LinkUnityProject();
         adicionar.Click += (_, _) => AddProject();
         remover.Click += (_, _) => RemoveProject();
-        listaBotoes.Controls.AddRange([adicionar, remover]);
+        listaBotoes.Controls.AddRange([vincular, adicionar, remover]);
 
         _projectList.SelectedIndexChanged += (_, _) => ShowSelectedProject();
+
+        // Escolher uma pasta pode preencher outro campo — a versao do editor sai
+        // do workspace. Aqui o Refresh e seguro: este evento so dispara DEPOIS
+        // de o valor ter sido confirmado.
+        _projectGrid.PropertyValueChanged += (_, e) =>
+        {
+            _projectGrid.Refresh();
+            RefreshProjectList();
+
+            // Trocou a URL ou a credencial: a lista de branches da anterior nao
+            // vale mais.
+            var propriedade = e.ChangedItem?.PropertyDescriptor?.Name;
+            if (propriedade is nameof(ProjectView.Url) or nameof(ProjectView.PatCredentialName)
+                && SelectedProject() is { } projeto)
+            {
+                _branches.EnsureLoaded(projeto, _options.Defaults, force: true);
+            }
+        };
+
+        _branches.Updated += OnBranchesLoaded;
 
         var listaCartao = WrapInCard(_projectList);
         listaCartao.Controls.Add(listaBotoes);
@@ -97,6 +139,8 @@ public sealed class ConfigPanel : UserControl
 
         projetos.Controls.Add(split);
         tabs.TabPages.Add(projetos);
+
+        tabs.TabPages.Add(BuildGitHubTab());
 
         // --- rodape
         var acoes = new FlowLayoutPanel
@@ -124,6 +168,327 @@ public sealed class ConfigPanel : UserControl
         Controls.Add(acoes);
     }
 
+    /// <summary>
+    /// A conexao com o GitHub tem aba propria porque ela nao pertence a projeto
+    /// nenhum: e o que todos herdam. No meio do cadastro de um projeto, ela
+    /// sugeria — errado — que cada jogo tem a sua.
+    /// </summary>
+    private TabPage BuildGitHubTab()
+    {
+        var pagina = new TabPage("GitHub") { Padding = new Padding(0, 10, 0, 0) };
+
+        _githubStatus.Dock = DockStyle.Top;
+        _githubStatus.Height = 40;
+        _githubStatus.Padding = new Padding(2, 10, 2, 4);
+        _githubStatus.ForeColor = Theme.TextFaint;
+
+        var botoes = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            Height = 48,
+            Padding = new Padding(0, 8, 0, 8),
+            BackColor = Theme.Surface,
+        };
+
+        var conectar = new PillButton("Conectar ao GitHub", ButtonKind.Primary) { Width = 168, Backdrop = Theme.Surface };
+        var outraConta = new PillButton("Entrar com outra conta", ButtonKind.Default) { Width = 180, Backdrop = Theme.Surface };
+        var esquecer = new PillButton("Desconectar", ButtonKind.Ghost) { Width = 120, Backdrop = Theme.Surface };
+
+        conectar.Click += (_, _) => ConnectToGitHub(conectar);
+        outraConta.Click += (_, _) => SignInToGitHub();
+        esquecer.Click += (_, _) => DisconnectFromGitHub();
+
+        botoes.Controls.AddRange([conectar, outraConta, esquecer]);
+
+        _conta.Dock = DockStyle.Top;
+
+        _numeros.Dock = DockStyle.Top;
+        _numeros.Margin = new Padding(0, 10, 0, 0);
+
+        // A tela nao explica mais como a conexao funciona: ela mostra a conta, o
+        // que ela alcanca e os tres botoes. O texto que estava aqui repetia o
+        // Tutorial, e uma tela que explica a si mesma toda vez e uma tela que
+        // nao se explica de relance.
+        //
+        // Nada aqui e editavel de proposito. O nome da credencial e escolha do
+        // programa, e o Client ID so importa dentro do botao, quando sobra o
+        // navegador.
+        var sobra = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Surface };
+
+        var cartao = WrapInCard(sobra);
+        cartao.Controls.Add(_githubStatus);
+        cartao.Controls.Add(botoes);
+        cartao.Controls.Add(_numeros);
+        cartao.Controls.Add(_conta);
+
+        pagina.Controls.Add(cartao);
+        return pagina;
+    }
+
+    /// <summary>
+    /// Em que pe esta a conexao da maquina. Mostra tambem quantos projetos a
+    /// herdam e quantos tem excecao: sem isso, "conectado" nao responde a
+    /// pergunta que importa, que e se os projetos vao conseguir clonar.
+    /// </summary>
+    private void RefreshGitHubStatus()
+    {
+        var nome = _options.Defaults.Repository.PatCredentialName;
+
+        var herdam = _options.Projects.Count(p => string.IsNullOrWhiteSpace(p.Repository?.PatCredentialName));
+        var excecoes = _options.Projects.Count - herdam;
+
+        MostrarNumeros(herdam, excecoes, escopos: null);
+
+        if (string.IsNullOrWhiteSpace(nome))
+        {
+            _githubStatus.ForeColor = Theme.Warning;
+            _githubStatus.Text = "Nenhuma conexão guardada nesta máquina.";
+
+            _contaConsultada = null;
+            _conta.Selo(null, Theme.TextFaint);
+            _conta.Mostrar("Nenhuma conta conectada", "Clique em 'Conectar ao GitHub'.", null, null, conectado: false);
+            return;
+        }
+
+        var existe = false;
+        try { existe = _credentials.Exists(nome); }
+        catch (InvalidOperationException) { /* cofre indisponivel: tratado como ausente */ }
+
+        if (!existe)
+        {
+            _githubStatus.ForeColor = Theme.Danger;
+            _githubStatus.Text = $"A configuração aponta para '{nome}', que não existe no cofre do Windows.";
+
+            _contaConsultada = null;
+            _conta.Selo("SEM CREDENCIAL", Theme.Danger);
+            _conta.Mostrar("Credencial não encontrada", $"'{nome}' não existe no cofre do Windows.", null, null,
+                conectado: false);
+            return;
+        }
+
+        LoadGitHubAccount(nome, forcar: false);
+    }
+
+    /// <summary>
+    /// A faixa de tres numeros. Os escopos so aparecem depois que o GitHub
+    /// responde, e em token de granularidade fina nunca aparecem — o GitHub nao
+    /// os conta. Nesses casos a caixa diz isso, em vez de mostrar um traco que
+    /// parece defeito.
+    /// </summary>
+    private void MostrarNumeros(int herdam, int excecoes, string? escopos)
+        => _numeros.Mostrar(
+            (herdam.ToString(), herdam == 1 ? "projeto herda esta conexão" : "projetos herdam esta conexão"),
+            (excecoes.ToString(), excecoes == 1 ? "projeto com credencial própria" : "projetos com credencial própria"),
+            (escopos ?? "—", "escopos do token"));
+
+    /// <summary>
+    /// Quem e o dono do token guardado, com foto e @.
+    ///
+    /// E confirmacao visual: "conectado" nao diz se a conta e a do time ou uma
+    /// pessoal esquecida nesta maquina. De quebra, uma resposta negativa do
+    /// GitHub aparece aqui — e melhor descobrir que o token nao vale mais nesta
+    /// tela do que no meio de uma build.
+    /// </summary>
+    private void LoadGitHubAccount(string credencial, bool forcar)
+    {
+        if (!forcar && string.Equals(_contaConsultada, credencial, StringComparison.OrdinalIgnoreCase)) return;
+
+        _contaConsultada = credencial;
+
+        _buscaDaConta?.Cancel();
+        _buscaDaConta?.Dispose();
+        _buscaDaConta = new CancellationTokenSource();
+        var ct = _buscaDaConta.Token;
+
+        _conta.Selo("CONSULTANDO", Theme.Info);
+        _conta.Mostrar("Buscando a conta no GitHub...", $"Credencial: {credencial}", null, null, conectado: false);
+
+        _ = Task.Run(async () =>
+        {
+            GitHubAccount? conta = null;
+            byte[]? retrato = null;
+            var semResposta = false;
+
+            try
+            {
+                var token = _credentials.Read(credencial);
+
+                if (!string.IsNullOrWhiteSpace(token))
+                {
+                    using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+                    var perfil = new GitHubProfile(http);
+
+                    conta = await perfil.ReadAsync(token, ct).ConfigureAwait(false);
+
+                    if (conta?.AvatarUrl is { Length: > 0 } endereco)
+                        retrato = await perfil.ReadAvatarAsync(endereco, ct).ConfigureAwait(false);
+                }
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { return; }
+            catch (Exception exception) when (exception is HttpRequestException or OperationCanceledException)
+            {
+                // Sem rede, ou o GitHub demorou demais. Nao e a mesma coisa que
+                // token recusado, e dizer "nao reconheceu" aqui seria acusar uma
+                // credencial boa.
+                semResposta = true;
+            }
+            catch (InvalidOperationException)
+            {
+                // Cofre indisponivel: a tela continua dizendo o que sabe.
+                semResposta = true;
+            }
+
+            if (ct.IsCancellationRequested) return;
+
+            NoFormulario(() => ShowGitHubAccount(credencial, conta, retrato, semResposta));
+        }, ct);
+    }
+
+    private void ShowGitHubAccount(string credencial, GitHubAccount? conta, byte[]? retrato, bool semResposta)
+    {
+        if (conta is null && semResposta)
+        {
+            _conta.Selo("SEM RESPOSTA", Theme.Warning);
+            _conta.Mostrar(
+                "Sem resposta do GitHub",
+                "Não deu para confirmar de quem é o acesso guardado — provavelmente falta rede.",
+                $"Credencial no cofre do Windows: {credencial}",
+                null,
+                conectado: false);
+
+            // Sem resposta nao e resposta: na proxima vez que a tela aparecer,
+            // pergunta de novo.
+            _contaConsultada = null;
+            return;
+        }
+
+        if (conta is null)
+        {
+            _githubStatus.ForeColor = Theme.Danger;
+            _githubStatus.Text = "O GitHub recusou o acesso guardado. Ele pode ter expirado ou sido revogado.";
+
+            _conta.Selo("RECUSADA", Theme.Danger);
+            _conta.Mostrar(
+                "Conectado, mas o GitHub não reconheceu este acesso",
+                $"O que está guardado em '{credencial}' pode ter expirado ou sido revogado.",
+                "Use 'Entrar com outra conta' para conectar de novo.",
+                null,
+                conectado: false);
+            return;
+        }
+
+        _conta.Selo("CONECTADA", Theme.Success);
+        _conta.Mostrar(
+            conta.Display,
+            $"@{conta.Login} · credencial {credencial} no cofre do Windows",
+            null,
+            Retrato(retrato),
+            conectado: true);
+
+        var herdam = _options.Projects.Count(p => string.IsNullOrWhiteSpace(p.Repository?.PatCredentialName));
+        MostrarNumeros(herdam, _options.Projects.Count - herdam, conta.Scopes);
+
+        _githubStatus.ForeColor = Theme.TextFaint;
+        _githubStatus.Text = $"Conta confirmada no GitHub às {DateTime.Now:HH:mm}.";
+    }
+
+    /// <summary>
+    /// Bytes viram bitmap proprio: com Image.FromStream o fluxo precisa viver
+    /// tanto quanto a imagem, e um fluxo fechado vira erro generico do GDI+ na
+    /// primeira repintura.
+    /// </summary>
+    private static Image? Retrato(byte[]? bytes)
+    {
+        if (bytes is null || bytes.Length == 0) return null;
+
+        try
+        {
+            using var fluxo = new MemoryStream(bytes);
+            using var original = Image.FromStream(fluxo);
+            return new Bitmap(original);
+        }
+        catch (Exception exception) when (exception is ArgumentException or OutOfMemoryException)
+        {
+            // Nao era imagem. A silhueta resolve.
+            return null;
+        }
+    }
+
+
+    /// <summary>
+    /// Esquece a conexao na configuracao. O token continua no cofre do Windows:
+    /// apagar credencial que este programa nao criou seria passar por cima de
+    /// outra coisa que a use.
+    /// </summary>
+    private void DisconnectFromGitHub()
+    {
+        if (string.IsNullOrWhiteSpace(_options.Defaults.Repository.PatCredentialName)) return;
+
+        var resposta = MessageBox.Show(
+            this,
+            "Os projetos deixam de usar esta conexão e voltam a clonar sem credencial." +
+            Environment.NewLine + Environment.NewLine +
+            "O token continua guardado no cofre do Windows; para removê-lo de vez, use o Gerenciador de " +
+            "Credenciais do Windows.",
+            AppNames.Display, MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+
+        if (resposta != DialogResult.Yes) return;
+
+        _options.Defaults.Repository.PatCredentialName = null;
+
+        RefreshGitHubStatus();
+        ShowSelectedProject();
+    }
+
+    /// <summary>
+    /// Leva uma resposta de segundo plano de volta para a thread da janela —
+    /// guardando-a quando a janela ainda nao tem handle.
+    ///
+    /// Esta pagina e construida junto com a janela, antes de qualquer handle
+    /// existir, e ja sai perguntando a conta ao GitHub. A resposta costuma
+    /// chegar em menos de um segundo, ou seja, no meio dessa janela de tempo —
+    /// e simplesmente descarta-la deixava o cartao preso em "buscando a conta"
+    /// para sempre.
+    /// </summary>
+    private void NoFormulario(Action acao)
+    {
+        lock (_espera)
+        {
+            if (!_prontoParaUi)
+            {
+                _espera.Add(acao);
+                return;
+            }
+        }
+
+        try { BeginInvoke(acao); }
+        catch (ObjectDisposedException) { /* janela fechando */ }
+        catch (InvalidOperationException) { /* handle indo embora */ }
+    }
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+
+        Action[] guardadas;
+
+        lock (_espera)
+        {
+            _prontoParaUi = true;
+            guardadas = [.. _espera];
+            _espera.Clear();
+        }
+
+        foreach (var acao in guardadas) NoFormulario(acao);
+    }
+
+    protected override void OnHandleDestroyed(EventArgs e)
+    {
+        lock (_espera) _prontoParaUi = false;
+
+        base.OnHandleDestroyed(e);
+    }
+
     private static Card WrapInCard(Control content)
     {
         var card = new Card { Dock = DockStyle.Fill, Padding = new Padding(10) };
@@ -147,7 +512,8 @@ public sealed class ConfigPanel : UserControl
             Report("Não foi possível ler o arquivo: " + exception.Message, problema: true);
         }
 
-        _schedulerGrid.SelectedObject = _options.Scheduler;
+        _schedulerGrid.SelectedObject = new GeneralView(_options);
+        RefreshGitHubStatus();
         RefreshProjectList();
     }
 
@@ -173,18 +539,319 @@ public sealed class ConfigPanel : UserControl
     private void ShowSelectedProject()
     {
         var index = _projectList.SelectedIndex;
-        _projectGrid.SelectedObject = index >= 0 && index < _options.Projects.Count
-            ? new ProjectView(_options.Projects[index])
-            : null;
+
+        if (index < 0 || index >= _options.Projects.Count)
+        {
+            _projectGrid.SelectedObject = null;
+            return;
+        }
+
+        var project = _options.Projects[index];
+        var view = new ProjectView(project, _branches, _options.Defaults);
+        _projectGrid.SelectedObject = view;
+
+        // A lista de branches e buscada em segundo plano; quando o usuario abrir
+        // o dropdown, ela ja estara la. Nada aqui espera pela rede.
+        _branches.EnsureLoaded(project, _options.Defaults);
+
+        // A divergencia de versao do editor tem prioridade sobre o andamento da
+        // busca de branches: uma build na versao errada produz um artefato que
+        // parece certo, e isso importa mais que saber se a lista ja carregou.
+        if (view.DivergenciaDeEditor is { } aviso) Report(aviso, Tom.Aviso);
+        else ReportBranches(project.Repository?.Url);
     }
 
+    /// <summary>
+    /// Diz em que pe esta a lista de branches do repositorio selecionado.
+    ///
+    /// E chamado tanto ao selecionar o projeto quanto quando a consulta termina:
+    /// a carga costuma acabar antes de alguem abrir a pagina de configuracao, e
+    /// so o aviso de chegada deixaria a tela muda justamente no caso normal.
+    /// </summary>
+    private void ReportBranches(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return;
+
+        // Nao atropela uma mensagem de gravacao ou de erro, que importam mais —
+        // mas substitui livremente o proprio aviso anterior sobre branches.
+        if (_problems.Text.Length > 0 && !_branchMessage) return;
+
+        if (_branches.IsLoading(url))
+        {
+            Report("Consultando as branches de " + url + "...", problema: false, sobreBranches: true);
+            return;
+        }
+
+        var quantas = _branches.Known(url).Count;
+
+        Report(
+            quantas == 0
+                ? "Não foi possível listar as branches de " + url +
+                  ". Confira a URL e a credencial — dá para digitar o nome da branch à mão."
+                : $"{quantas} branch(es) no dropdown do campo Branch.",
+            problema: quantas == 0,
+            sobreBranches: true);
+    }
+
+    /// <summary>
+    /// A busca das branches costuma terminar antes de alguem abrir esta pagina —
+    /// e ate antes de ela ter um handle, quando o aviso de chegada nao tem para
+    /// onde ir. Entao o estado e reavaliado toda vez que a pagina aparece.
+    /// </summary>
+    protected override void OnVisibleChanged(EventArgs e)
+    {
+        base.OnVisibleChanged(e);
+
+        if (!Visible) return;
+
+        ReportBranches(SelectedProject()?.Repository?.Url);
+
+        // A consulta da conta pode ter ficado sem resposta — falta de rede na
+        // hora em que a janela abriu, por exemplo. Aqui ela ganha outra chance.
+        if (_contaConsultada is null) RefreshGitHubStatus();
+    }
+
+    /// <summary>
+    /// O botao que resolve o caso normal: olha primeiro o que esta maquina ja
+    /// tem e so manda para o navegador quando nao ha nada.
+    ///
+    /// A ordem importa. Quem ja clonou por HTTPS aqui, ja usa o GitHub Desktop
+    /// ou ja rodou 'gh auth login' tem um token guardado; abrir o navegador
+    /// nesse caso seria pedir de novo o que ja esta na mao — e ainda obrigaria a
+    /// registrar um OAuth App so para isso.
+    /// </summary>
+    private void ConnectToGitHub(PillButton botao)
+    {
+        botao.Enabled = false;
+        _githubStatus.ForeColor = Theme.TextMuted;
+        _githubStatus.Text = "Procurando uma conta do GitHub já guardada nesta máquina...";
+
+        _ = Task.Run(() =>
+        {
+            ContaEncontrada? conta = null;
+            string? falha = null;
+
+            try
+            {
+                var busca = new GitHubDiscovery(_credentials);
+                conta = busca.Procurar();
+                if (conta is not null) busca.Guardar(conta);
+            }
+            catch (Exception exception)
+            {
+                falha = exception.Message;
+            }
+
+            NoFormulario(() =>
+            {
+                botao.Enabled = true;
+
+                if (falha is not null)
+                {
+                    _githubStatus.ForeColor = Theme.Danger;
+                    _githubStatus.Text = "Não foi possível guardar o acesso no cofre do Windows: " + falha;
+                    return;
+                }
+
+                // Nada guardado nesta maquina: agora sim, o caminho do navegador.
+                if (conta is null)
+                {
+                    RefreshGitHubStatus();
+                    SignInToGitHub();
+                    return;
+                }
+
+                AdoptConnection(conta.Origem);
+            });
+        });
+    }
+
+    /// <summary>
+    /// Entrar no GitHub pela janela — navegador, GitHub CLI ou a conta do Git.
+    ///
+    /// O token vai para o cofre do Windows sem passar por arquivo nem pela tela;
+    /// o que fica na configuracao continua sendo so o NOME da credencial.
+    /// </summary>
+    private void SignInToGitHub()
+    {
+        using var janela = new GitHubSignInForm(
+            _credentials,
+            GitHubConnection.ClientIdEmVigor(_options.GitHub.ClientId));
+
+        if (janela.ShowDialog(this) != DialogResult.OK) return;
+
+        // O Client ID digitado na hora fica gravado, para a proxima conexao
+        // nesta maquina ser um clique so.
+        if (janela.ClientIdInformado is { Length: > 0 } clientId && clientId != _options.GitHub.ClientId)
+            _options.GitHub.ClientId = clientId;
+
+        AdoptConnection("a conta que você autorizou");
+    }
+
+    /// <summary>
+    /// Aponta a maquina inteira para a credencial recem-guardada.
+    ///
+    /// A conexao e da maquina, nao de cada jogo: ela vai para os padroes e os
+    /// projetos herdam. As credenciais por projeto que existiam antes saem do
+    /// caminho — quem precisar de outra conta num projeto especifico volta a
+    /// preencher o campo dele.
+    /// </summary>
+    private void AdoptConnection(string origem)
+    {
+        _options.Defaults.Repository.PatCredentialName = GitHubConnection.CredentialName;
+
+        var comCredencialPropria = _options.Projects
+            .Where(p => !string.IsNullOrWhiteSpace(p.Repository?.PatCredentialName))
+            .ToList();
+
+        foreach (var projeto in comCredencialPropria)
+            projeto.Repository!.PatCredentialName = null;
+
+        // Pode ser outra conta guardada sob o mesmo nome: a consulta anterior
+        // nao vale mais, e a foto na tela seria a da conta antiga.
+        _contaConsultada = null;
+
+        RefreshGitHubStatus();
+        ShowSelectedProject();
+
+        // A lista de branches de todos eles muda agora que ha acesso.
+        _branches.Clear();
+        if (SelectedProject() is { } atual)
+        {
+            _branches.EnsureLoaded(atual, _options.Defaults, force: true);
+            ReportBranches(atual.Repository?.Url);
+        }
+
+        MessageBox.Show(
+            this,
+            $"Conectado ao GitHub usando {origem}." + Environment.NewLine + Environment.NewLine +
+            $"O acesso vale para a máquina inteira, na credencial '{GitHubConnection.CredentialName}'. " +
+            "Todos os projetos passam a usá-lo — não é preciso configurar por jogo." +
+            (comCredencialPropria.Count > 0
+                ? Environment.NewLine + Environment.NewLine +
+                  $"{comCredencialPropria.Count} projeto(s) tinham credencial própria e passaram a herdar esta."
+                : "") +
+            Environment.NewLine + Environment.NewLine +
+            "A foto e o @ da conta aparecem na aba em instantes. Falta salvar para valer.",
+            AppNames.Display, MessageBoxButtons.OK, MessageBoxIcon.Information);
+    }
+
+    private ProjectOptions? SelectedProject()
+    {
+        var index = _projectList.SelectedIndex;
+        return index >= 0 && index < _options.Projects.Count ? _options.Projects[index] : null;
+    }
+
+    /// <summary>
+    /// Chegou a lista de branches de um repositorio, numa thread do pool.
+    ///
+    /// A grade nao e atualizada aqui de proposito: o dropdown pergunta a lista
+    /// na hora em que e aberto, e um Refresh no meio de uma digitacao jogaria
+    /// fora o que estivesse sendo digitado. O que aparece e so um aviso, e so
+    /// quando nao ha outra mensagem mais importante na tela.
+    /// </summary>
+    private void OnBranchesLoaded(string url)
+    {
+        if (!IsHandleCreated) return;
+
+        try
+        {
+            BeginInvoke(() =>
+            {
+                if (_branches.IsLoading(url)) return;
+                ReportBranches(url);
+            });
+        }
+        catch (ObjectDisposedException) { /* janela fechando */ }
+        catch (InvalidOperationException) { /* handle indo embora */ }
+    }
+
+    /// <summary>
+    /// Cadastra um projeto a partir de uma pasta que ja existe na maquina.
+    ///
+    /// A pasta escolhida serve so para LER: dela saem a URL, a branch e a versao
+    /// do editor. O workspace do CI e outro, proprio, porque o pipeline apaga o
+    /// que nao esta commitado antes de cada build — apontar para a pasta de
+    /// trabalho de alguem destruiria o que estivesse em andamento.
+    /// </summary>
+    private void LinkUnityProject()
+    {
+        using var dialog = new FolderBrowserDialog
+        {
+            UseDescriptionForTitle = true,
+            Description = "Escolha a pasta do projeto Unity (a que tem Assets e ProjectSettings)",
+            ShowNewFolderButton = false,
+        };
+
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+
+        var rascunho = ProjectDraft.FromFolder(dialog.SelectedPath, _options.Projects);
+
+        if (!rascunho.Recognized)
+        {
+            MessageBox.Show(
+                this,
+                "Essa pasta não tem ProjectSettings\\ProjectVersion.txt nem um repositório Git." +
+                Environment.NewLine + Environment.NewLine +
+                "Escolha a pasta raiz do projeto Unity, ou use 'Vazio' para preencher tudo à mão.",
+                AppNames.Display, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        var projeto = rascunho.Project;
+
+        _options.Projects.Add(projeto);
+        RefreshProjectList();
+        _projectList.SelectedIndex = _options.Projects.Count - 1;
+
+        var resumo = new List<string>
+        {
+            "Nome: " + projeto.Name,
+            "Repositório: " + (rascunho.Repository?.Url is { Length: > 0 } url ? url : "(não encontrado — preencha)"),
+            "Branch: " + (rascunho.Repository?.Branch ?? "(HEAD solto — confira)"),
+            "Versão do Unity: " + (rascunho.EditorVersion ?? "(não encontrada — preencha)"),
+            "Workspace do CI: " + projeto.Repository.WorkspacePath,
+        };
+
+        MessageBox.Show(
+            this,
+            "Projeto vinculado:" + Environment.NewLine + Environment.NewLine +
+            string.Join(Environment.NewLine, resumo.Select(l => "  " + l)) + Environment.NewLine + Environment.NewLine +
+            "O CI não constrói dentro da pasta que você escolheu: ele clona no workspace acima." +
+            Environment.NewLine + Environment.NewLine +
+            "Falta escolher a pasta de destino (ArtifactFolder) e marcar Enabled como True. Depois, Salvar e reiniciar.",
+            AppNames.Display, MessageBoxButtons.OK, MessageBoxIcon.Information);
+    }
+
+    /// <summary>
+    /// Projeto em branco. O nome e perguntado aqui porque ele nao e editavel
+    /// depois: e ele que identifica a fila, o arquivo de configuracao, o gatilho
+    /// e o historico.
+    /// </summary>
     private void AddProject()
     {
+        var nome = TextPrompt.Ask(
+            this,
+            "Novo projeto",
+            "Nome do projeto. Ele identifica a fila, o arquivo de configuração, o gatilho e o histórico — " +
+            "e não muda depois.");
+
+        if (nome is null) return;
+
+        if (_options.Projects.Any(p => string.Equals(p.Name, nome, StringComparison.OrdinalIgnoreCase)))
+        {
+            MessageBox.Show(
+                this, $"Já existe um projeto chamado '{nome}'.",
+                AppNames.Display, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
         _options.Projects.Add(new ProjectOptions
         {
-            Name = "NovoProjeto",
+            Name = nome,
             Enabled = false,
             Repository = new RepositoryOptions { Branch = "HML" },
+            Unity = new UnityOptions { BuildTarget = BuildTargetConverter.Alvos[0] },
             Publishing = new PublishingOptions(),
         });
 
@@ -200,7 +867,7 @@ public sealed class ConfigPanel : UserControl
         var nome = _options.Projects[index].Name;
         var resposta = MessageBox.Show(
             this, $"Remover o projeto '{nome}' da configuracao?\n\nIsto nao apaga workspace, artefatos nem historico.",
-            "UnityLocalCI", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+            AppNames.Display, MessageBoxButtons.YesNo, MessageBoxIcon.Question);
 
         if (resposta != DialogResult.Yes) return;
 
@@ -210,11 +877,28 @@ public sealed class ConfigPanel : UserControl
 
     // ------------------------------------------------------------------ gravar
 
+    /// <summary>
+    /// Confirma o que esta sendo digitado antes de gravar.
+    ///
+    /// O PropertyGrid so escreve o valor no objeto quando a celula perde o foco.
+    /// Aqui havia um Refresh() com a intencao contraria: Refresh recarrega a
+    /// grade a partir do objeto e JOGA FORA o que foi digitado. O efeito era
+    /// gravar — ou reprovar — o valor antigo, com a tela mostrando o novo.
+    ///
+    /// Tirar o foco e o que confirma a edicao.
+    /// </summary>
+    private void CommitPendingEdits()
+    {
+        var form = FindForm();
+        if (form is null) return;
+
+        if (_schedulerGrid.ContainsFocus || _projectGrid.ContainsFocus)
+            form.ActiveControl = null;
+    }
+
     private void Save(bool restart)
     {
-        // O PropertyGrid pode estar com uma celula em edicao.
-        _schedulerGrid.Refresh();
-        _projectGrid.Refresh();
+        CommitPendingEdits();
 
         var problemas = ConfigFile.Save(_configPath, _options, _credentials);
 
@@ -243,18 +927,42 @@ public sealed class ConfigPanel : UserControl
     }
 
     /// <summary>
-    /// A mesma linha diz as duas coisas, entao a cor precisa acompanhar: sucesso
+    /// O que a linha do rodape esta dizendo. Aviso e o meio-termo: nao impede
+    /// de gravar, mas a build vai sair diferente do que se espera.
+    /// </summary>
+    private enum Tom { Bom, Aviso, Problema }
+
+    private void Report(string text, bool problema, bool sobreBranches = false)
+        => Report(text, problema ? Tom.Problema : Tom.Bom, sobreBranches);
+
+    /// <summary>
+    /// A mesma linha diz as tres coisas, entao a cor precisa acompanhar: sucesso
     /// escrito em vermelho ensina o usuario a ignorar o vermelho.
     /// </summary>
-    private void Report(string text, bool problema)
+    private void Report(string text, Tom tom, bool sobreBranches = false)
     {
         _problems.Text = text;
-        _problems.ForeColor = problema ? Theme.Danger : Theme.Success;
+        _problems.ForeColor = tom switch
+        {
+            Tom.Problema => Theme.Danger,
+            Tom.Aviso => Theme.Warning,
+            _ => Theme.Success,
+        };
 
         // Escondida quando nao ha o que dizer: uma faixa vazia de 60 pixels
         // entre o conteudo e os botoes so faz a tela parecer desalinhada.
         _problems.Visible = text.Length > 0;
+
+        _branchMessage = sobreBranches;
     }
+
+    /// <summary>
+    /// Verdadeiro quando o que esta escrito na linha de mensagens foi posto pela
+    /// propria busca de branches. Sem isso, o "Consultando..." bloquearia o
+    /// resultado que vem logo depois — a mensagem ficaria parada em "consultando"
+    /// para sempre.
+    /// </summary>
+    private bool _branchMessage;
 
     private void OpenInEditor()
     {
@@ -266,118 +974,7 @@ public sealed class ConfigPanel : UserControl
     {
         Dock = DockStyle.Fill,
         ToolbarVisible = false,
-        PropertySort = PropertySort.NoSort,
+        PropertySort = PropertySort.Categorized,
         HelpVisible = true,
     };
-}
-
-/// <summary>
-/// Achata o projeto para o PropertyGrid: sem isto, Repository, Unity e
-/// Publishing apareceriam como sub-objetos que o usuario precisa expandir um a
-/// um, e os campos herdados de Defaults nao teriam explicacao nenhuma.
-/// </summary>
-public sealed class ProjectView
-{
-    private readonly ProjectOptions _project;
-    private readonly RepositoryOptions _repository;
-    private readonly PublishingOptions _publishing;
-
-    public ProjectView(ProjectOptions project)
-    {
-        _project = project;
-
-        // Guardados em campos nao-anulaveis: as sobrescritas por projeto sao
-        // opcionais na configuracao, mas a tela sempre tem onde escrever.
-        _repository = _project.Repository ??= new RepositoryOptions();
-        _publishing = _project.Publishing ??= new PublishingOptions();
-    }
-
-    [System.ComponentModel.Category("Projeto")]
-    [System.ComponentModel.Description("Identifica a fila, o estado e aparece nos arquivos de status. Precisa ser unico.")]
-    public string Name
-    {
-        get => _project.Name;
-        set => _project.Name = value;
-    }
-
-    [System.ComponentModel.Category("Projeto")]
-    [System.ComponentModel.Description("Desligado, o projeto fica na configuracao mas nao e observado nem construido.")]
-    public bool Enabled
-    {
-        get => _project.Enabled;
-        set => _project.Enabled = value;
-    }
-
-    [System.ComponentModel.Category("Repositorio")]
-    public string Url
-    {
-        get => _repository.Url;
-        set => _repository.Url = value;
-    }
-
-    [System.ComponentModel.Category("Repositorio")]
-    [System.ComponentModel.Description("Branch observada. A build dispara quando o HEAD dela muda.")]
-    public string Branch
-    {
-        get => _repository.Branch;
-        set => _repository.Branch = value;
-    }
-
-    [System.ComponentModel.Category("Repositorio")]
-    [System.ComponentModel.Description("Clone dedicado e permanente. Dois projetos nunca podem compartilhar o mesmo caminho: o Unity trava a Library do diretorio.")]
-    public string WorkspacePath
-    {
-        get => _repository.WorkspacePath;
-        set => _repository.WorkspacePath = value;
-    }
-
-    [System.ComponentModel.Category("Repositorio")]
-    [System.ComponentModel.Description("NOME da credencial no Windows Credential Manager, nunca o PAT. Grave o valor com tools\\set-secrets.ps1.")]
-    public string? PatCredentialName
-    {
-        get => _repository.PatCredentialName;
-        set => _repository.PatCredentialName = string.IsNullOrWhiteSpace(value) ? null : value;
-    }
-
-    [System.ComponentModel.Category("Unity")]
-    [System.ComponentModel.Description("Versao exata do editor. Vazio herda de Defaults. Nao e adivinhada: buildar na versao errada produz um artefato que parece certo e nao e.")]
-    public string? EditorVersion
-    {
-        get => _project.Unity?.EditorVersion;
-        set
-        {
-            _project.Unity ??= new UnityOptions();
-            _project.Unity.EditorVersion = string.IsNullOrWhiteSpace(value) ? null : value;
-        }
-    }
-
-    [System.ComponentModel.Category("Unity")]
-    [System.ComponentModel.Description("Vazio herda de Defaults (WebGL).")]
-    public string? BuildTarget
-    {
-        get => _project.Unity?.BuildTarget;
-        set
-        {
-            _project.Unity ??= new UnityOptions();
-            _project.Unity.BuildTarget = string.IsNullOrWhiteSpace(value) ? null : value;
-        }
-    }
-
-    [System.ComponentModel.Category("Publicacao")]
-    [System.ComponentModel.Description("Pasta onde o time pega o zip.")]
-    public string? ArtifactFolder
-    {
-        get => _publishing.ArtifactFolder;
-        set => _publishing.ArtifactFolder = value;
-    }
-
-    [System.ComponentModel.Category("Publicacao")]
-    [System.ComponentModel.Description("Tocar este arquivo enfileira uma build do HEAD atual. O servico o apaga ao consumir.")]
-    public string? ManualTriggerFile
-    {
-        get => _project.ManualTriggerFile;
-        set => _project.ManualTriggerFile = string.IsNullOrWhiteSpace(value) ? null : value;
-    }
-
-    public override string ToString() => _project.Name;
 }

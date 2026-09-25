@@ -32,6 +32,35 @@ public sealed class InMemoryBuildStore : IBuildStore
         lock (_gate) return Task.FromResult(_builds.TryGetValue(id, out var r) ? r : null);
     }
 
+    public Task<bool> DeleteAsync(long id, CancellationToken ct)
+    {
+        lock (_gate)
+        {
+            if (!_builds.TryGetValue(id, out var build) || Viva(build)) return Task.FromResult(false);
+
+            _builds.Remove(id);
+            return Task.FromResult(true);
+        }
+    }
+
+    public Task<int> DeleteFinishedAsync(string? project, CancellationToken ct)
+    {
+        lock (_gate)
+        {
+            var alvos = _builds.Values
+                .Where(b => !Viva(b))
+                .Where(b => project is null || string.Equals(b.Project, project, StringComparison.OrdinalIgnoreCase))
+                .Select(b => b.Id)
+                .ToList();
+
+            foreach (var id in alvos) _builds.Remove(id);
+            return Task.FromResult(alvos.Count);
+        }
+    }
+
+    private static bool Viva(BuildRecord build)
+        => build.Status is BuildStatus.Queued or BuildStatus.Running;
+
     public Task<IReadOnlyList<BuildRecord>> GetByStatusAsync(BuildStatus status, CancellationToken ct)
     {
         lock (_gate)

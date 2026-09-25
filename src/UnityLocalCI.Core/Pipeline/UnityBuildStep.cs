@@ -39,7 +39,6 @@ public sealed class UnityBuildStep : IBuildStep
             BuildTarget = context.Project.Unity.BuildTarget,
             ExecuteMethod = context.Project.Unity.ExecuteMethod,
             OutputPath = context.BuildOutputPath,
-            LogFilePath = context.LogPath,
             Timeout = TimeSpan.FromMinutes(context.Project.Unity.TimeoutMinutes),
             ExtraArgs = context.Project.Unity.ExtraArgs,
             CustomArguments = new Dictionary<string, string>

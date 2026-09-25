@@ -25,14 +25,32 @@ public static class ConfigFile
 
     public static string DefaultPath => Path.Combine(AppContext.BaseDirectory, "appsettings.json");
 
-    public static CiOptions Load(string path)
+    public static CiOptions Load(string path) => Load(path, out _);
+
+    /// <summary>
+    /// Le a configuracao da maquina do appsettings.json e os projetos da pasta
+    /// 'projetos', um arquivo cada.
+    ///
+    /// <paramref name="problems"/> traz os arquivos de projeto que nao puderam
+    /// ser lidos. Eles nao entram na lista, e o resto continua valendo: um
+    /// projeto sumir em silencio por causa de uma virgula a mais em outro seria
+    /// pior que a lista vir incompleta com o motivo na tela.
+    /// </summary>
+    public static CiOptions Load(string path, out IReadOnlyList<string> problems)
     {
+        // Migracao dos projetos que ainda estejam dentro do appsettings.json.
+        ProjectFiles.MigrateFromAppSettings(path);
+
         var configuration = new ConfigurationBuilder()
             .SetBasePath(Path.GetDirectoryName(Path.GetFullPath(path))!)
             .AddJsonFile(Path.GetFileName(path), optional: false)
             .Build();
 
-        return configuration.Get<CiOptions>() ?? new CiOptions();
+        var options = configuration.Get<CiOptions>() ?? new CiOptions();
+
+        options.Projects = ProjectFiles.LoadAll(ProjectFiles.FolderFor(path), out problems).ToList();
+
+        return options;
     }
 
     /// <summary>Valida e grava. Retorna a lista de problemas; vazia significa gravado.</summary>
@@ -51,8 +69,13 @@ public static class ConfigFile
         document["Scheduler"] = options.Scheduler;
         document["State"] = options.State;
         document["Defaults"] = options.Defaults;
-        document["Projects"] = options.Projects;
         document["Notifications"] = options.Notifications;
+
+        // Os projetos NAO entram aqui: cada um tem o proprio arquivo na pasta
+        // 'projetos'. Gravar os dois lugares faria a configuracao ter duas
+        // versoes da verdade, e a pior hora de descobrir isso e no dia em que
+        // elas divergirem.
+        ProjectFiles.SaveAll(ProjectFiles.FolderFor(path), options.Projects);
 
         var json = JsonSerializer.Serialize(document, WriteOptions);
 

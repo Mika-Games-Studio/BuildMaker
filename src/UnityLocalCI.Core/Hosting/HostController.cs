@@ -107,6 +107,10 @@ public sealed class HostController : IAsyncDisposable
 
     private IHost Build()
     {
+        // Uma vez, e so na primeira vez: projetos que ainda estejam dentro do
+        // appsettings.json passam a ter arquivo proprio.
+        ProjectFiles.MigrateFromAppSettings(_configPath);
+
         var builder = Host.CreateApplicationBuilder();
 
         builder.Configuration
@@ -116,9 +120,11 @@ public sealed class HostController : IAsyncDisposable
             .AddEnvironmentVariables("UNITYLOCALCI_");
 
         builder.Logging.ClearProviders();
+        // O unico destino do log: a memoria da janela. Ele vive enquanto o
+        // programa viver, e some com ele. Ver LiveLog.
         builder.Logging.AddProvider(new LiveLogProvider(_liveLog));
 
-        builder.Services.AddUnityLocalCI(builder.Configuration);
+        builder.Services.AddUnityLocalCI(builder.Configuration, ProjectFiles.FolderFor(_configPath));
 
         return builder.Build();
     }

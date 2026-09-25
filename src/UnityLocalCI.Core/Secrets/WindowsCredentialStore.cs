@@ -42,6 +42,57 @@ public sealed class WindowsCredentialStore : ICredentialStore
         }
     }
 
+    /// <summary>
+    /// Grava com persistencia LOCAL_MACHINE: a credencial sobrevive ao logoff,
+    /// mas continua sendo da conta do Windows que gravou. O cofre e por usuario
+    /// — uma conta de servico precisa da sua propria copia.
+    /// </summary>
+    public void Write(string credentialName, string secret)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(credentialName);
+        ArgumentNullException.ThrowIfNull(secret);
+
+        var blob = Marshal.StringToCoTaskMemUni(secret);
+        var alvo = Marshal.StringToCoTaskMemUni(credentialName);
+        var usuario = Marshal.StringToCoTaskMemUni("pat");
+
+        try
+        {
+            var credential = new CREDENTIAL
+            {
+                Type = CRED_TYPE_GENERIC,
+                TargetName = alvo,
+                CredentialBlob = blob,
+                CredentialBlobSize = (uint)(secret.Length * 2),
+                Persist = CRED_PERSIST_LOCAL_MACHINE,
+                UserName = usuario,
+            };
+
+            if (!CredWrite(ref credential, 0))
+            {
+                throw new InvalidOperationException(
+                    $"Falha ao gravar a credencial '{credentialName}' no Windows Credential Manager " +
+                    $"(erro {Marshal.GetLastWin32Error()}).");
+            }
+        }
+        finally
+        {
+            // Zera o segredo antes de devolver a memoria: um bloco liberado com
+            // o token ainda escrito pode acabar num despejo de memoria.
+            for (var i = 0; i < secret.Length; i++) Marshal.WriteInt16(blob, i * 2, 0);
+
+            Marshal.FreeCoTaskMem(blob);
+            Marshal.FreeCoTaskMem(alvo);
+            Marshal.FreeCoTaskMem(usuario);
+        }
+    }
+
+    private const uint CRED_PERSIST_LOCAL_MACHINE = 2;
+
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, EntryPoint = "CredWriteW", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CredWrite([In] ref CREDENTIAL credential, uint flags);
+
     [DllImport("advapi32.dll", CharSet = CharSet.Unicode, EntryPoint = "CredReadW", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool CredRead(string target, int type, int reservedFlag, out IntPtr credentialPtr);

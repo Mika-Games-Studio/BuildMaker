@@ -6,6 +6,12 @@ namespace UnityLocalCI.Core.Publishing;
 /// <summary>
 /// Publica copiando o zip para a pasta de destino.
 ///
+/// E tudo o que ele faz, e a pasta de destino contem exatamente isso: os zips
+/// das builds. Havia tambem uma pasta latest\ com a ultima build ja
+/// descompactada, trocada por rename de diretorio para nunca ficar em estado
+/// parcial. Ela saiu: quem quer a build pega o zip, e a pasta que o time abre
+/// fica com uma coisa so dentro, do tipo que se espera encontrar ali.
+///
 /// Resiliencia: o zip ja existe no staging local quando esta etapa comeca. Se o
 /// compartilhamento estiver indisponivel ou sem permissao, a build permanece
 /// bem-sucedida, a copia fica marcada como pendente e o staging nao e apagado.
@@ -13,14 +19,11 @@ namespace UnityLocalCI.Core.Publishing;
 public sealed class FolderPublisher : IArtifactPublisher
 {
     private readonly ArtifactCopier _copier;
-    private readonly ILatestFolderWriter _latest;
     private readonly ILogger<FolderPublisher> _logger;
 
-    public FolderPublisher(
-        ArtifactCopier copier, ILatestFolderWriter latest, ILogger<FolderPublisher> logger)
+    public FolderPublisher(ArtifactCopier copier, ILogger<FolderPublisher> logger)
     {
         _copier = copier;
-        _latest = latest;
         _logger = logger;
     }
 
@@ -28,39 +31,17 @@ public sealed class FolderPublisher : IArtifactPublisher
 
     public async Task<PublishResult> PublishAsync(FileInfo artifact, BuildContext context, CancellationToken ct)
     {
-        var destinationFolder = context.Project.Publishing.ArtifactFolder;
-
         var outcome = await _copier
-            .CopyAsync(artifact.FullName, destinationFolder, context.ArtifactSha256, ct)
+            .CopyAsync(
+                artifact.FullName,
+                context.Project.Publishing.ArtifactFolder,
+                context.ArtifactSha256,
+                ct)
             .ConfigureAwait(false);
 
         if (!outcome.Success) return PublishResult.Pending(outcome.Error!);
 
         _logger.LogInformation("Artefato publicado em {Path}.", outcome.Location);
-
-        await UpdateLatestAsync(destinationFolder, context, ct).ConfigureAwait(false);
-
         return PublishResult.Published(outcome.Location!);
-    }
-
-    /// <summary>
-    /// A latest\ vem depois do zip e nao pode derrubar a publicacao: o artefato
-    /// ja esta no destino e e ele que importa. Uma latest\ desatualizada faz
-    /// alguem testar a build errada, entao a falha vira aviso no _STATUS.txt.
-    /// </summary>
-    private async Task UpdateLatestAsync(string destinationFolder, BuildContext context, CancellationToken ct)
-    {
-        if (!context.Project.Publishing.MaintainLatestFolder) return;
-
-        var error = await _latest
-            .UpdateAsync(destinationFolder, context.BuildOutputPath, ct)
-            .ConfigureAwait(false);
-
-        if (error is null) return;
-
-        context.Warnings.Add(
-            $"A pasta latest\\ nao foi atualizada ({error}); ela ainda contem a build anterior.");
-
-        _logger.LogWarning("Falha ao atualizar a pasta latest: {Error}", error);
     }
 }

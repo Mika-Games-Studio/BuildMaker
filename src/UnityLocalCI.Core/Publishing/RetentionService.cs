@@ -14,8 +14,8 @@ public interface IRetentionService
 /// Retencao por contagem, executada apos cada build.
 ///
 /// A poda e guiada pelo banco, e nao por uma varredura da pasta: apagamos
-/// exatamente os arquivos que cada build registrou, e nunca um _STATUS.txt, um
-/// zip que alguem copiou para la na mao, ou a pasta latest\.
+/// exatamente os arquivos que cada build registrou, e nunca um zip que alguem
+/// copiou para la na mao.
 /// </summary>
 public sealed class RetentionService : IRetentionService
 {
@@ -47,9 +47,9 @@ public sealed class RetentionService : IRetentionService
             .Select(b => b.Id)
             .ToHashSet();
 
-        // E as mais recentes de qualquer resultado, pelo log. Sem isto, a build
-        // que acabou de falhar seria podada na mesma execucao que a criou, e o
-        // _STATUS.txt mandaria abrir um log que a retencao ja apagou.
+        // E as mais recentes de qualquer resultado. Sem isto, a build que acabou
+        // de falhar seria podada na mesma execucao que a criou, e o status
+        // apontaria para um artefato que a retencao ja tinha apagado.
         foreach (var id in recent.OrderByDescending(b => b.Id).Take(keepCount).Select(b => b.Id))
             keep.Add(id);
 
@@ -90,14 +90,15 @@ public sealed class RetentionService : IRetentionService
             removedAnything = true;
         }
 
-        // O log local e a copia em _logs\ no destino.
-        if (build.LogPath is { } log) removedAnything |= Delete(log);
+        // Sobras de quando o log da build ia para disco. Nao ha mais o que criar
+        // aqui; isto so apaga o que ficou de instalacoes anteriores, e some
+        // sozinho quando nao houver mais nenhum.
         removedAnything |= Delete(Path.Combine(project.Publishing.ArtifactFolder, "_logs", $"build-{build.Id}.log"));
 
         if (!removedAnything) return false;
 
         // O registro para de apontar para arquivos que nao existem mais, senao o
-        // _HISTORICO.txt continuaria oferecendo um zip que ja foi apagado.
+        // historico em JSON continuaria oferecendo um zip que ja foi apagado.
         await _store.UpdateAsync(record, ct).ConfigureAwait(false);
         return true;
     }

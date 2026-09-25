@@ -69,6 +69,43 @@ public sealed class GitClient : IGitClient
             await RunAsync(context, context.WorkspacePath, ct, "lfs", "pull");
     }
 
+    /// <summary>
+    /// 'ls-remote --heads' pergunta ao servidor sem clonar nada e sem tocar no
+    /// workspace: da para listar as branches antes mesmo de existir um clone.
+    ///
+    /// Roda com prazo proprio, menor que o de uma build: isto e chamado de uma
+    /// tela de configuracao, onde esperar um minuto por uma lista nao serve para
+    /// nada.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> ListRemoteBranchesAsync(GitContext context, CancellationToken ct)
+    {
+        var result = await RunAsync(
+            context,
+            // Fora de qualquer repositorio: a pergunta e sobre a URL, e um
+            // diretorio de trabalho inexistente faria o git falhar antes de
+            // chegar na rede.
+            workingDirectory: Path.GetTempPath(),
+            timeout: TimeSpan.FromSeconds(25),
+            ct,
+            "ls-remote", "--heads", context.RepositoryUrl);
+
+        const string prefix = "refs/heads/";
+
+        return result.StandardOutput
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => line.Trim())
+            .Select(line =>
+            {
+                var index = line.IndexOf(prefix, StringComparison.Ordinal);
+                return index < 0 ? null : line[(index + prefix.Length)..].Trim();
+            })
+            .Where(branch => !string.IsNullOrEmpty(branch))
+            .Select(branch => branch!)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(branch => branch, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
     private static bool UsesLfs(string workspacePath)
     {
         var attributes = Path.Combine(workspacePath, ".gitattributes");
@@ -76,8 +113,12 @@ public sealed class GitClient : IGitClient
             && File.ReadAllText(attributes).Contains("filter=lfs", StringComparison.OrdinalIgnoreCase);
     }
 
-    private async Task<ProcessResult> RunAsync(
+    private Task<ProcessResult> RunAsync(
         GitContext context, string workingDirectory, CancellationToken ct, params string[] args)
+        => RunAsync(context, workingDirectory, timeout: null, ct, args);
+
+    private async Task<ProcessResult> RunAsync(
+        GitContext context, string workingDirectory, TimeSpan? timeout, CancellationToken ct, params string[] args)
     {
         var (real, display) = WithAuthentication(context, args);
 
@@ -87,6 +128,7 @@ public sealed class GitClient : IGitClient
             Arguments = real,
             DisplayArguments = display,
             WorkingDirectory = workingDirectory,
+            Timeout = timeout,
             Environment = new Dictionary<string, string>
             {
                 // Sem prompt interativo: numa conta de servico um prompt de
@@ -110,6 +152,18 @@ public sealed class GitClient : IGitClient
     }
 
     /// <summary>
+    /// Usuario do Basic. O valor em si nao importa para o servidor — o que
+    /// autentica e o PAT, que vai como senha —, mas ele NAO pode ser vazio: o
+    /// GitHub recusa Basic sem usuario, o git cai no gerenciador de credenciais
+    /// e morre com "Cannot prompt because user interactivity has been disabled",
+    /// que nao tem relacao nenhuma com o problema real.
+    ///
+    /// 'x-access-token' e o nome que o proprio GitHub usa para tokens, e o Azure
+    /// DevOps ignora o usuario, entao serve para os dois.
+    /// </summary>
+    private const string BasicUser = "x-access-token";
+
+    /// <summary>
     /// O PAT vai por '-c http.extraHeader' na invocacao, nunca na URL do remote
     /// nem gravado em .git/config, para que ele nao sobreviva ao processo.
     /// </summary>
@@ -118,7 +172,7 @@ public sealed class GitClient : IGitClient
         if (string.IsNullOrEmpty(context.PersonalAccessToken))
             return (args, args);
 
-        var basic = Convert.ToBase64String(Encoding.UTF8.GetBytes($":{context.PersonalAccessToken}"));
+        var basic = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{BasicUser}:{context.PersonalAccessToken}"));
         var real = new[] { "-c", $"http.extraHeader=Authorization: Basic {basic}" }.Concat(args).ToArray();
         var display = new[] { "-c", RedactedHeader }.Concat(args).ToArray();
         return (real, display);

@@ -17,6 +17,20 @@ public static class ProjectResolver
     public static IReadOnlyList<ResolvedProject> ResolveEnabled(CiOptions options)
         => options.Projects.Where(p => p.Enabled).Select(p => Resolve(p, options.Defaults)).ToList();
 
+    /// <summary>
+    /// A credencial que este projeto vai usar de verdade: a dele, se tiver, ou a
+    /// da maquina. Vazio e nulo valem o mesmo — quem apagou o campo na tela quer
+    /// herdar, nao ficar sem credencial.
+    /// </summary>
+    public static string? ResolveCredential(ProjectOptions project, ProjectDefaults defaults)
+    {
+        var doProjeto = project.Repository.PatCredentialName;
+        if (!string.IsNullOrWhiteSpace(doProjeto)) return doProjeto.Trim();
+
+        var daMaquina = defaults.Repository.PatCredentialName;
+        return string.IsNullOrWhiteSpace(daMaquina) ? null : daMaquina.Trim();
+    }
+
     public static ResolvedProject Resolve(ProjectOptions project, ProjectDefaults defaults)
     {
         var w = project.Watcher;
@@ -32,7 +46,17 @@ public static class ProjectResolver
 
         return new ResolvedProject(
             Name: project.Name,
-            Repository: project.Repository,
+
+            // A credencial e a unica coisa do repositorio que se herda: o acesso
+            // ao Git e da maquina, e nao de cada jogo. URL, branch e workspace
+            // sao necessariamente proprios.
+            Repository: new RepositoryOptions
+            {
+                Url = project.Repository.Url,
+                Branch = project.Repository.Branch,
+                WorkspacePath = project.Repository.WorkspacePath,
+                PatCredentialName = ResolveCredential(project, defaults),
+            },
             ManualTriggerFile: project.ManualTriggerFile,
             Watcher: new ResolvedWatcher(
                 w?.PollIntervalSeconds ?? dw.PollIntervalSeconds ?? FallbackPollIntervalSeconds,
@@ -47,12 +71,17 @@ public static class ProjectResolver
                 u?.TimeoutMinutes ?? du.TimeoutMinutes ?? FallbackTimeoutMinutes,
                 u?.ExtraArgs ?? du.ExtraArgs ?? Array.Empty<string>()),
             Packaging: new ResolvedPackaging(
-                pk?.NamePattern ?? dpk.NamePattern ?? FallbackNamePattern,
-                pk?.IncludeLauncher ?? dpk.IncludeLauncher ?? true),
+                pk?.NamePattern ?? dpk.NamePattern ?? FallbackNamePattern),
             Publishing: new ResolvedPublishing(
                 pb?.StagingFolder ?? dpb.StagingFolder ?? "",
-                pb?.ArtifactFolder ?? dpb.ArtifactFolder ?? "",
-                pb?.MaintainLatestFolder ?? dpb.MaintainLatestFolder ?? true,
+
+                // So dos padroes, de proposito: a pasta de destino e uma so para
+                // todos os projetos. Cada zip ja tem projeto, branch, data e
+                // commit no nome, entao uma pasta por jogo nao separava nada — e
+                // era mais um campo para preencher a cada projeto novo, com a
+                // chance de um deles apontar para outro lugar sem ninguem ver.
+                dpb.ArtifactFolder ?? "",
+
                 pb?.WriteStatusFiles ?? dpb.WriteStatusFiles ?? true),
             Retention: new ResolvedRetention(
                 rt?.KeepLastBuilds ?? drt.KeepLastBuilds ?? FallbackKeepLastBuilds,

@@ -39,6 +39,15 @@ public sealed class StartupService : IHostedService
         await _store.InitializeAsync(cancellationToken).ConfigureAwait(false);
         await _recovery.RecoverAsync(projects, cancellationToken).ConfigureAwait(false);
 
+        foreach (var project in projects)
+        {
+            if (WorkspacePathLimit.Arriscado(project.Repository.WorkspacePath))
+            {
+                _logger.LogWarning("{Aviso}",
+                    WorkspacePathLimit.Explicacao(project.Name, project.Repository.WorkspacePath));
+            }
+        }
+
         _logger.LogInformation(
             "UnityLocalCI iniciado com {Count} projeto(s): {Projects}.",
             projects.Count, string.Join(", ", projects.Select(p => p.Name)));
@@ -56,8 +65,6 @@ public sealed class StartupService : IHostedService
     /// </summary>
     private void CreateLocalFolders(CiOptions configuration, IReadOnlyList<ResolvedProject> projects)
     {
-        Directory.CreateDirectory(configuration.State.LogFolder);
-
         foreach (var project in projects)
         {
             Directory.CreateDirectory(project.Publishing.StagingFolder);

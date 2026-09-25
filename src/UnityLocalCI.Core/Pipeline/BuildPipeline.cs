@@ -28,6 +28,7 @@ public sealed class BuildPipeline : IBuildRunner
     private readonly IGlobalStatusWriter _globalStatus;
     private readonly IRetentionService _retention;
     private readonly IClock _clock;
+    private readonly BuildProgress _progress;
     private readonly CiOptions _options;
     private readonly ILogger<BuildPipeline> _logger;
 
@@ -43,6 +44,7 @@ public sealed class BuildPipeline : IBuildRunner
         IGlobalStatusWriter globalStatus,
         IRetentionService retention,
         IClock clock,
+        BuildProgress progress,
         IOptions<CiOptions> options,
         ILogger<BuildPipeline> logger)
     {
@@ -57,6 +59,7 @@ public sealed class BuildPipeline : IBuildRunner
         _globalStatus = globalStatus;
         _retention = retention;
         _clock = clock;
+        _progress = progress;
         _options = options.Value;
         _logger = logger;
     }
@@ -64,7 +67,6 @@ public sealed class BuildPipeline : IBuildRunner
     public async Task RunAsync(BuildJob job, CancellationToken ct)
     {
         var startedAt = _clock.UtcNow;
-        var logPath = Path.Combine(_options.State.LogFolder, $"build-{job.BuildId}.log");
 
         var context = new BuildContext
         {
@@ -73,16 +75,15 @@ public sealed class BuildPipeline : IBuildRunner
             Commit = job.Commit,
             Trigger = job.Trigger,
             StartedAt = startedAt,
-            LogPath = logPath,
             BuildOutputPath = Path.Combine(
                 job.Project.Publishing.StagingFolder, "build", job.Project.Name),
             Git = BuildGitContext(job.Project),
         };
 
-        _log.Open(logPath);
+        _log.Open(job.BuildId);
         _log.Write($"=== Build {job.BuildId} | {job.Project.Name} | {job.Commit.ShortSha} | {startedAt.ToLocalTime():dd/MM/yyyy HH:mm:ss} ===");
 
-        await MarkRunningAsync(job, startedAt, logPath, ct).ConfigureAwait(false);
+        await MarkRunningAsync(job, startedAt, ct).ConfigureAwait(false);
 
         var steps = new IBuildStep[] { _sync, _build, _package, _publish };
         StepResult? failure = null;
@@ -95,6 +96,7 @@ public sealed class BuildPipeline : IBuildRunner
 
                 _log.Write($"--- {step.Name} ---");
                 _logger.LogInformation("Etapa {Step} iniciada.", step.Name);
+                _progress.Entrou(job.BuildId, step.Name);
 
                 var result = await step.ExecuteAsync(context, ct).ConfigureAwait(false);
                 if (result.Success) continue;
@@ -130,7 +132,7 @@ public sealed class BuildPipeline : IBuildRunner
             : _credentials.Read(project.Repository.PatCredentialName!),
     };
 
-    private async Task MarkRunningAsync(BuildJob job, DateTimeOffset startedAt, string logPath, CancellationToken ct)
+    private async Task MarkRunningAsync(BuildJob job, DateTimeOffset startedAt, CancellationToken ct)
     {
         var record = await _store.GetAsync(job.BuildId, ct).ConfigureAwait(false);
         if (record is null) return;
@@ -139,10 +141,9 @@ public sealed class BuildPipeline : IBuildRunner
         {
             Status = BuildStatus.Running,
             StartedAt = startedAt,
-            LogPath = logPath,
         }, ct).ConfigureAwait(false);
 
-        // O _STATUS-GERAL.txt e reescrito tambem aqui, e nao so no fim: quem
+        // O geral.json e reescrito tambem aqui, e nao so no fim: quem
         // abre o arquivo durante uma build de 30 minutos precisa ver
         // "construindo", nao o resultado da build anterior.
         await _globalStatus.WriteAsync(ct).ConfigureAwait(false);
@@ -159,10 +160,14 @@ public sealed class BuildPipeline : IBuildRunner
         var finishedAt = _clock.UtcNow;
         var duration = (int)(finishedAt - startedAt).TotalSeconds;
 
+        // Antes de qualquer outra coisa: daqui para a frente a build nao esta
+        // mais em etapa nenhuma, e um letreiro parado numa etapa que ja passou
+        // mente mais do que letreiro nenhum.
+        _progress.Saiu(job.BuildId);
+
         // O log e fechado antes dos notificadores porque um deles copia o arquivo
         // para a pasta de destino, e a copia precisa incluir a linha de resultado.
         _log.Write($"=== Resultado: {status} em {duration}s ===");
-        _log.Dispose();
 
         // Deliberadamente com CancellationToken.None: o registro do resultado
         // precisa acontecer mesmo quando a build foi interrompida.
@@ -180,7 +185,6 @@ public sealed class BuildPipeline : IBuildRunner
                 ArtifactSha256 = context.ArtifactSha256,
                 PublishedPath = context.PublishedPath,
                 PublishStatus = _publish.LastStatus,
-                LogPath = context.LogPath,
                 ErrorSummary = errorSummary,
             };
 

@@ -13,10 +13,20 @@ internal interface IPaintsItself;
 /// <summary>
 /// Tema da janela.
 ///
-/// A paleta e quente e escalonada — fundo, superficie e superficie elevada —
-/// em vez de um cinza unico: e isso que da profundidade sem sombra, e o que
-/// impede a tela de parecer chapada. O destaque e um so, o coral, usado com
+/// As duas cores da marca sao o verde #6FAB16 e o preto. O verde esta em 84
+/// graus de matiz, e os neutros sao o mesmo matiz com a saturacao quase toda
+/// tirada: fundo, superficie e superficie elevada saem de uma familia so, em
+/// vez de um cinza unico. E isso que da profundidade sem sombra, e o que
+/// impede a tela de parecer chapada. O destaque e um so, o verde, usado com
 /// parcimonia: se tudo destaca, nada destaca.
+///
+/// O verde e claro demais para carregar texto branco — da 2,7:1, reprovado em
+/// qualquer leitura. Por isso o que se escreve em cima do <see cref="Accent"/>
+/// e sempre o <see cref="Canvas"/>, que da 7,5:1.
+///
+/// O contrario tambem vale: o verde 500 sobre o fundo preto fica em 4,4:1, no
+/// limite para texto pequeno. Quando o verde e a tinta, e nao o preenchimento,
+/// quem entra e o <see cref="AccentHover"/>, o 400, que passa de 8:1.
 ///
 /// O WinForms nao tem tema. Cada controle pinta com as cores do sistema, entao
 /// tudo aqui e aplicado controle a controle, e os que o sistema insiste em
@@ -27,43 +37,87 @@ public static class Theme
 {
     // --------------------------------------------------------------- paleta
 
-    /// <summary>Fundo da janela, atras de tudo.</summary>
-    public static readonly Color Canvas = Rgb(0x1A1918);
+    /// <summary>Fundo da janela, atras de tudo. Preto, e nao um cinza escuro.</summary>
+    public static readonly Color Canvas = Rgb(0x000000);
 
     /// <summary>Coluna de navegacao: um degrau abaixo do conteudo.</summary>
-    public static readonly Color Rail = Rgb(0x1F1E1C);
+    public static readonly Color Rail = Rgb(0x0A0D05);
 
     /// <summary>Cartoes, grades, caixas de texto.</summary>
-    public static readonly Color Surface = Rgb(0x242321);
+    public static readonly Color Surface = Rgb(0x12160A);
 
     /// <summary>Cabecalhos de coluna, botoes, estado de hover.</summary>
-    public static readonly Color SurfaceHigh = Rgb(0x2E2C29);
+    public static readonly Color SurfaceHigh = Rgb(0x1B2410);
 
-    public static readonly Color Border = Rgb(0x36332E);
-    public static readonly Color BorderSoft = Rgb(0x2A2825);
-
-    public static readonly Color Text = Rgb(0xEDEAE4);
-    public static readonly Color TextMuted = Rgb(0x9B958A);
-    public static readonly Color TextFaint = Rgb(0x6E6960);
-
-    /// <summary>O coral. Um unico destaque em toda a interface.</summary>
-    public static readonly Color Accent = Rgb(0xD97757);
-
-    public static readonly Color AccentHover = Rgb(0xE28A6C);
-    public static readonly Color AccentPressed = Rgb(0xC0603E);
-
-    /// <summary>Coral diluido no fundo: selecao e item ativo, sem berrar.</summary>
-    public static readonly Color AccentSoft = Rgb(0x322721);
+    public static readonly Color Border = Rgb(0x2E3A1A);
+    public static readonly Color BorderSoft = Rgb(0x1B2410);
 
     /// <summary>
-    /// Verde e vermelho claros, nao escuros: no fundo escuro o tom fechado
-    /// some, e resultado de build e justamente o que precisa saltar aos olhos.
+    /// Branco levemente esverdeado, e nao puro: texto branco sobre fundo
+    /// colorido vibra na borda, e o olho paga por isso numa tela aberta o dia
+    /// inteiro.
     /// </summary>
-    public static readonly Color Success = Rgb(0x7FC08A);
+    public static readonly Color Text = Rgb(0xE9EFDD);
 
-    public static readonly Color Danger = Rgb(0xE8836F);
-    public static readonly Color Warning = Rgb(0xE0B252);
-    public static readonly Color Info = Rgb(0x7EA6C9);
+    public static readonly Color TextMuted = Rgb(0xA9B594);
+    public static readonly Color TextFaint = Rgb(0x7C8A68);
+
+    /// <summary>
+    /// O verde da marca, o 500 da escala. Um unico destaque em toda a
+    /// interface, e sempre como preenchimento: botao primario, bolinha de
+    /// estado, marca.
+    /// </summary>
+    public static readonly Color Accent = Rgb(0x6FAB16);
+
+    /// <summary>
+    /// O verde 400. E o hover do botao primario e, no resto da janela, o verde
+    /// como tinta: icone do item ativo, codigo do device flow, build em
+    /// execucao. Sobre o preto o 500 fica em 4,4:1 e este passa de 8:1.
+    /// </summary>
+    public static readonly Color AccentHover = Rgb(0x89CE22);
+
+    public static readonly Color AccentPressed = Rgb(0x5B8D11);
+
+    /// <summary>Verde diluido no fundo: selecao e item ativo, sem berrar.</summary>
+    public static readonly Color AccentSoft = Rgb(0x1D280B);
+
+    /// <summary>
+    /// O verde 800, so para as duas faces expostas dentro do encaixe da marca.
+    /// E o que da profundidade ao vao sem gradiente nenhum.
+    /// </summary>
+    public static readonly Color AccentDeep = Rgb(0x324E09);
+
+    /// <summary>
+    /// Os estados de build, claros e nao escuros: no fundo escuro o tom fechado
+    /// some, e resultado de build e justamente o que precisa saltar aos olhos.
+    ///
+    /// O verde-agua do sucesso e de proposito diferente do verde da marca. Se
+    /// fossem o mesmo, "terminou bem" e "este e o botao principal" falariam com
+    /// a mesma voz, e uma tela cheia de linhas verdes nao diria mais nada.
+    /// </summary>
+    public static readonly Color Success = Rgb(0x3FB58E);
+
+    public static readonly Color Danger = Rgb(0xE2593C);
+    public static readonly Color Warning = Rgb(0xE0A21C);
+    public static readonly Color Info = Rgb(0x62A8C4);
+
+    // ----------------------------------------------------------------- log
+
+    /// <summary>
+    /// O fundo da area de log. Meio degrau acima do cartao: o log e um bloco de
+    /// texto denso, e um fundo proprio o separa do resto sem precisar de moldura.
+    /// </summary>
+    public static readonly Color LogSurface = Rgb(0x171F0B);
+
+    /// <summary>
+    /// A mensagem de uma linha de erro. O <see cref="Danger"/> cheio fica no
+    /// rotulo, que e curto; uma frase inteira naquele vermelho cansa de ler, e
+    /// justamente a frase de erro e a que precisa ser lida ate o fim.
+    /// </summary>
+    public static readonly Color DangerSoft = Rgb(0xF3A08D);
+
+    /// <summary>O mesmo, para aviso.</summary>
+    public static readonly Color WarningSoft = Rgb(0xEDC66E);
 
     // ------------------------------------------------- compatibilidade de nome
 
@@ -87,6 +141,23 @@ public static class Theme
     public static readonly Font UiSmallBold = new(UiFamily, 8.25f, FontStyle.Bold);
     public static readonly Font Title = new(UiFamily, 14f, FontStyle.Bold);
     public static readonly Font Mono = new(MonoFamily, 9f);
+
+    /// <summary>
+    /// O corpo dos botoes: meio ponto acima do texto corrente. Rotulo de botao
+    /// e alvo de clique, e alvo de clique se le de relance.
+    /// </summary>
+    public static readonly Font Button = new(UiFamily, 9.5f);
+
+    public static readonly Font ButtonBold = new(UiFamily, 9.5f, FontStyle.Bold);
+
+    /// <summary>Cabecalho de coluna de grade: pequeno, mas em peso cheio.</summary>
+    public static readonly Font ColumnHeader = new(UiFamily, 8.25f, FontStyle.Bold);
+
+    /// <summary>
+    /// O rotulo de estado nas grades. Caixa alta em corpo pequeno pede peso, ou
+    /// vira um borrao.
+    /// </summary>
+    public static readonly Font StatusLabel = new(UiFamily, 8.25f, FontStyle.Bold);
 
     private static string FirstInstalled(params string[] candidates)
     {
@@ -228,9 +299,12 @@ public static class Theme
                 split.Panel2.BackColor = Canvas;
                 return;
 
+            // A fonte do rotulo nao e tocada: quem criou um titulo escolheu a
+            // fonte de proposito, e sobrescrever aqui achatava o tutorial inteiro
+            // num tamanho so. Sem fonte propria, ele herda a do formulario, que
+            // ja e a do tema.
             case Label label:
                 label.BackColor = BackdropOf(label);
-                label.Font = Ui;
                 return;
 
             default:
@@ -269,8 +343,8 @@ public static class Theme
         grid.CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal;
         grid.ForeColor = Text;
         grid.Font = Ui;
-        grid.RowTemplate.Height = 30;
-        grid.ColumnHeadersHeight = 32;
+        grid.RowTemplate.Height = 38;
+        grid.ColumnHeadersHeight = 34;
         grid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing;
 
         grid.DefaultCellStyle.BackColor = Surface;
@@ -280,15 +354,31 @@ public static class Theme
         grid.DefaultCellStyle.Padding = new Padding(8, 0, 4, 0);
 
         grid.ColumnHeadersDefaultCellStyle.BackColor = Surface;
-        grid.ColumnHeadersDefaultCellStyle.ForeColor = TextMuted;
+        grid.ColumnHeadersDefaultCellStyle.ForeColor = TextFaint;
         grid.ColumnHeadersDefaultCellStyle.SelectionBackColor = Surface;
-        grid.ColumnHeadersDefaultCellStyle.SelectionForeColor = TextMuted;
-        grid.ColumnHeadersDefaultCellStyle.Font = UiSmallBold;
+        grid.ColumnHeadersDefaultCellStyle.SelectionForeColor = TextFaint;
+        grid.ColumnHeadersDefaultCellStyle.Font = ColumnHeader;
         grid.ColumnHeadersDefaultCellStyle.Padding = new Padding(8, 0, 4, 0);
         grid.ColumnHeadersBorderStyle = DataGridViewHeaderBorderStyle.None;
 
         grid.RowHeadersDefaultCellStyle.BackColor = Surface;
         grid.RowHeadersDefaultCellStyle.ForeColor = TextMuted;
+
+        // O filete embaixo do cabecalho e mais forte que o das linhas: ele
+        // separa o rotulo do dado, e os das linhas so separam dado de dado.
+        // O DataGridView nao tem propriedade para isso, entao ele e pintado.
+        grid.CellPainting += (_, e) =>
+        {
+            if (e.RowIndex != -1 || e.ColumnIndex < 0) return;
+
+            e.Paint(e.ClipBounds, e.PaintParts);
+
+            using var caneta = new Pen(Border);
+            e.Graphics!.DrawLine(caneta,
+                e.CellBounds.Left, e.CellBounds.Bottom - 1, e.CellBounds.Right, e.CellBounds.Bottom - 1);
+
+            e.Handled = true;
+        };
 
         UseDarkScrollbars(grid);
     }
@@ -300,9 +390,9 @@ public static class Theme
         grid.ViewForeColor = Text;
         grid.ViewBorderColor = BorderSoft;
         grid.LineColor = BorderSoft;
-        grid.CategoryForeColor = Accent;
+        grid.CategoryForeColor = TextMuted;
         grid.CategorySplitterColor = BorderSoft;
-        grid.HelpBackColor = SurfaceHigh;
+        grid.HelpBackColor = Rail;
         grid.HelpForeColor = TextMuted;
         grid.HelpBorderColor = Border;
         grid.CommandsBackColor = Surface;

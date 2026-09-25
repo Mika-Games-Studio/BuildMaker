@@ -25,11 +25,17 @@ public class PendingCopyServiceTests : IDisposable
 
         _options = new CiOptions
         {
-            Scheduler = new SchedulerOptions { GlobalStatusFile = null },
+            Scheduler = new SchedulerOptions(),
             Defaults = new ProjectDefaults
             {
                 Unity = new UnityOptions { EditorVersion = "6000.0.47f1" },
-                Publishing = new PublishingOptions { StagingFolder = _staging },
+                Publishing = new PublishingOptions
+                {
+                    StagingFolder = _staging,
+
+                    // Uma so, para todos os projetos.
+                    ArtifactFolder = _destination,
+                },
             },
         };
 
@@ -42,7 +48,6 @@ public class PendingCopyServiceTests : IDisposable
                 Branch = "HML",
                 WorkspacePath = @"C:\ci\workspace\crash",
             },
-            Publishing = new PublishingOptions { ArtifactFolder = _destination },
         });
     }
 

@@ -24,6 +24,122 @@ internal static class UiKit
 
     public static void Text(Graphics g, string text, Font font, Rectangle bounds, Color color, TextFormatFlags flags)
         => TextRenderer.DrawText(g, text, font, bounds, color, flags);
+
+    private const TextFormatFlags Colado =
+        TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix |
+        TextFormatFlags.NoPadding;
+
+    /// <summary>
+    /// A assinatura: duas palavras em pesos diferentes que precisam parecer uma
+    /// so. Medidas sem folga lateral de proposito — o <see cref="TextRenderer"/>
+    /// reserva alguns pixels em cada ponta por padrao, e com eles a emenda entre
+    /// 'Build' e 'Maker' abre e denuncia que sao dois desenhos.
+    /// </summary>
+    public static void WordMark(Graphics g, Rectangle bounds, string forte, string fraco,
+        Color corForte, Color corFraca)
+    {
+        var largura = TextRenderer
+            .MeasureText(g, forte, Theme.UiBold, new Size(int.MaxValue, bounds.Height), Colado)
+            .Width;
+
+        TextRenderer.DrawText(g, forte, Theme.UiBold, bounds, corForte, Colado);
+
+        TextRenderer.DrawText(g, fraco, Theme.Ui,
+            new Rectangle(bounds.X + largura, bounds.Y, Math.Max(0, bounds.Width - largura), bounds.Height),
+            corFraca, Colado);
+    }
+
+    /// <summary>
+    /// A bolinha de estado das grades: 7 pixels, na cor do estado, antes do
+    /// rotulo em caixa alta.
+    ///
+    /// Existe porque a cor sozinha nao basta — uma em cada doze pessoas nao
+    /// distingue o vermelho do verde, e a forma redonda a esquerda de cada
+    /// linha e o que deixa a coluna de estado varrivel com o olho.
+    /// </summary>
+    public static void StatusDot(Graphics g, Rectangle bounds, Color cor)
+    {
+        const int diametro = 7;
+
+        var y = bounds.Y + (bounds.Height - diametro) / 2;
+        var modo = g.SmoothingMode;
+
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        using (var pincel = new SolidBrush(cor))
+            g.FillEllipse(pincel, bounds.X, y, diametro, diametro);
+
+        g.SmoothingMode = modo;
+    }
+
+    /// <summary>
+    /// A roda que gira enquanto a build corre.
+    ///
+    /// Um rotulo que diz "EM EXECUCAO" fica igual aos dois minutos e aos vinte;
+    /// o que responde "esta andando ou travou?" e uma coisa que se mexe. E um
+    /// arco de 300 graus, e nao um circulo inteiro, porque um circulo girando
+    /// nao parece girar.
+    /// </summary>
+    public static void Spinner(Graphics g, Rectangle bounds, Color cor, float angulo)
+    {
+        const int lado = 14;
+
+        var caixa = new Rectangle(
+            bounds.X + (bounds.Width - lado) / 2,
+            bounds.Y + (bounds.Height - lado) / 2,
+            lado, lado);
+
+        var modo = g.SmoothingMode;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+
+        using (var trilho = new Pen(Theme.Blend(Theme.Surface, cor, 0.25), 2f))
+            g.DrawEllipse(trilho, caixa);
+
+        using (var caneta = new Pen(cor, 2f) { StartCap = LineCap.Round, EndCap = LineCap.Round })
+            g.DrawArc(caneta, caixa, angulo, 300f * 0.3f);
+
+        g.SmoothingMode = modo;
+    }
+
+    /// <summary>
+    /// Lixeira: tampa, corpo e duas ripas. Desenhada e nao vinda de uma fonte de
+    /// simbolos, pelo mesmo motivo dos icones da navegacao — fonte de icone que
+    /// nao existe na maquina vira quadradinho.
+    /// </summary>
+    public static void TrashGlyph(Graphics g, Rectangle r, Color cor)
+    {
+        var modo = g.SmoothingMode;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+
+        using var caneta = new Pen(cor, 1.5f) { StartCap = LineCap.Round, EndCap = LineCap.Round };
+
+        var meio = r.X + r.Width / 2;
+
+        // Tampa e cabo.
+        g.DrawLine(caneta, r.X + 1, r.Y + 4, r.Right - 1, r.Y + 4);
+        g.DrawLine(caneta, meio - 3, r.Y + 4, meio - 3, r.Y + 2);
+        g.DrawLine(caneta, meio + 3, r.Y + 4, meio + 3, r.Y + 2);
+        g.DrawLine(caneta, meio - 3, r.Y + 2, meio + 3, r.Y + 2);
+
+        // Corpo.
+        g.DrawLine(caneta, r.X + 3, r.Y + 5, r.X + 4, r.Bottom - 2);
+        g.DrawLine(caneta, r.Right - 3, r.Y + 5, r.Right - 4, r.Bottom - 2);
+        g.DrawLine(caneta, r.X + 4, r.Bottom - 2, r.Right - 4, r.Bottom - 2);
+
+        // Ripas.
+        g.DrawLine(caneta, meio - 2, r.Y + 7, meio - 2, r.Bottom - 5);
+        g.DrawLine(caneta, meio + 2, r.Y + 7, meio + 2, r.Bottom - 5);
+
+        g.SmoothingMode = modo;
+    }
+
+    /// <summary>Quadrado cheio, o simbolo universal de parar.</summary>
+    public static void StopGlyph(Graphics g, Rectangle r, Color cor)
+    {
+        var lado = Math.Min(r.Width, r.Height) - 5;
+        var caixa = new Rectangle(r.X + (r.Width - lado) / 2, r.Y + (r.Height - lado) / 2, lado, lado);
+
+        Theme.FillRounded(g, caixa, cor, 2f);
+    }
 }
 
 // ---------------------------------------------------------------------- cartao
@@ -101,7 +217,7 @@ internal sealed class PillButton : Button, IPaintsItself
 
         FlatStyle = FlatStyle.Flat;
         FlatAppearance.BorderSize = 0;
-        Font = Theme.Ui;
+        Font = kind == ButtonKind.Primary ? Theme.ButtonBold : Theme.Button;
         Height = 32;
         Margin = new Padding(0, 0, 8, 0);
         Cursor = Cursors.Hand;
@@ -131,10 +247,10 @@ internal sealed class PillButton : Button, IPaintsItself
         var (preenchimento, texto, contorno) = Colors();
 
         if (preenchimento.A > 0)
-            Theme.FillRounded(g, bounds, preenchimento, 7f);
+            Theme.FillRounded(g, bounds, preenchimento, 8f);
 
         if (contorno.A > 0)
-            Theme.DrawRounded(g, bounds, contorno, 7f);
+            Theme.DrawRounded(g, bounds, contorno, 8f);
 
         UiKit.Text(g, Text, Font, ClientRectangle, texto, UiKit.Centered);
 
@@ -153,11 +269,13 @@ internal sealed class PillButton : Button, IPaintsItself
         {
             ButtonKind.Primary => (
                 _pressed ? Theme.AccentPressed : _hover ? Theme.AccentHover : Theme.Accent,
-                Color.FromArgb(0x1A, 0x14, 0x11),
+                Theme.Canvas,
                 Color.Transparent),
 
+            // Fantasma: sem preenchimento nem contorno em repouso. O fundo so
+            // aparece sob o cursor, e e o mesmo degrau de tom do botao comum.
             ButtonKind.Ghost => (
-                _pressed ? Theme.SurfaceHigh : _hover ? Theme.Blend(Theme.Canvas, Theme.Text, 0.07) : Color.Transparent,
+                _pressed ? Theme.Blend(Theme.SurfaceHigh, Theme.Text, 0.07) : _hover ? Theme.SurfaceHigh : Color.Transparent,
                 _hover ? Theme.Text : Theme.TextMuted,
                 Color.Transparent),
 
@@ -215,7 +333,7 @@ internal sealed class DarkListBox : ListBox, IPaintsItself
 
 // ------------------------------------------------------------------ navegacao
 
-internal enum NavGlyph { Projects, Builds, Log, Settings }
+internal enum NavGlyph { Projects, Builds, Log, Tutorial, Settings }
 
 /// <summary>
 /// Coluna de navegacao a esquerda, no lugar das abas de cima.
@@ -236,15 +354,36 @@ internal sealed class NavRail : Panel, IPaintsItself
 
         BackColor = Theme.Rail;
         Width = 208;
-        Padding = new Padding(10, 68, 10, 10);
+
+        // Embaixo sobra espaco para a assinatura do rodape. Os itens de
+        // navegacao sao filhos com Dock=Top e respeitam o padding; sem esta
+        // folga, numa janela baixa o ultimo item cobriria o texto.
+        Padding = new Padding(10, 68, 10, 38);
     }
 
     public event Action<int>? SelectionChanged;
 
+    /// <summary>A metade em peso cheio da assinatura.</summary>
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-    public string HeaderTitle { get; init; } = "UnityLocalCI";
+    public string HeaderTitle { get; init; } = "Build";
+
+    /// <summary>A metade em peso normal, colada na anterior.</summary>
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-    public string HeaderSubtitle { get; init; } = "CI local";
+    public string HeaderTitleTail { get; init; } = "Maker";
+
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public string HeaderSubtitle { get; init; } = "Unity Local CI";
+
+    /// <summary>
+    /// A assinatura no pe da coluna. Vazio nao desenha nada.
+    ///
+    /// Fica aqui, e nao na barra de status, porque o pe da coluna e o unico
+    /// canto da janela que nao muda de conteudo — a barra de status diz o que o
+    /// servico esta fazendo agora, e uma linha fixa no meio disso disputaria
+    /// espaco com a unica informacao que muda.
+    /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public string FooterText { get; init; } = "";
 
     /// <summary>Marca do programa desenhada no topo — a mesma da bandeja.</summary>
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
@@ -298,16 +437,27 @@ internal sealed class NavRail : Panel, IPaintsItself
         if (HeaderMark is not null)
         {
             g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-            g.DrawImage(HeaderMark, new Rectangle(14, 18, 24, 24));
-            textoX = 46;
+            g.DrawImage(HeaderMark, new Rectangle(14, 21, 26, 26));
+            textoX = 48;
         }
 
         // Altura folgada de proposito: com o retangulo justo, o Windows corta a
-        // perna do 'y' de Unity.
-        UiKit.Text(g, HeaderTitle, Theme.UiBold, new Rectangle(textoX, 14, Width - textoX - 10, 18),
-            Theme.Text, UiKit.LeftMiddle);
+        // perna do 'y'.
+        UiKit.WordMark(g, new Rectangle(textoX, 20, Width - textoX - 10, 18),
+            HeaderTitle, HeaderTitleTail, Theme.Text, Theme.TextMuted);
 
-        UiKit.Text(g, HeaderSubtitle, Theme.UiSmall, new Rectangle(textoX, 32, Width - textoX - 10, 16),
+        UiKit.Text(g, HeaderSubtitle, Theme.UiSmall, new Rectangle(textoX, 38, Width - textoX - 10, 16),
+            Theme.TextFaint, UiKit.LeftMiddle);
+
+        if (FooterText.Length == 0) return;
+
+        // Alinhado a esquerda com a assinatura do topo, e nao com o icone: as
+        // duas linhas de texto da coluna nascem na mesma vertical.
+        const int alturaDaLinha = 16;
+        const int respiro = 12;
+
+        UiKit.Text(g, FooterText, Theme.UiSmall,
+            new Rectangle(16, Height - alturaDaLinha - respiro, Width - 26, alturaDaLinha),
             Theme.TextFaint, UiKit.LeftMiddle);
     }
 }
@@ -352,15 +502,19 @@ internal sealed class NavItem : Control, IPaintsItself
         var bounds = new Rectangle(0, 2, Width, Height - 4);
 
         if (_selected) Theme.FillRounded(g, bounds, Theme.AccentSoft, 8f);
-        else if (_hover) Theme.FillRounded(g, bounds, Theme.Blend(Theme.Rail, Theme.Text, 0.06), 8f);
+        else if (_hover) Theme.FillRounded(g, bounds, Theme.SurfaceHigh, 8f);
 
-        var cor = _selected ? Theme.Accent : _hover ? Theme.Text : Theme.TextMuted;
+        // O icone e o texto nao andam juntos: o icone carrega a cor — verde no
+        // item ativo, apagado nos demais — e o texto carrega o peso. Dois sinais
+        // diferentes para a mesma coisa cansam menos que dois iguais.
+        var icone = _selected ? Theme.AccentHover : _hover ? Theme.TextMuted : Theme.TextFaint;
+        var texto = _selected || _hover ? Theme.Text : Theme.TextMuted;
 
-        DrawGlyph(g, new Rectangle(12, bounds.Y + (bounds.Height - 16) / 2, 16, 16), cor);
+        DrawGlyph(g, new Rectangle(12, bounds.Y + (bounds.Height - 16) / 2, 16, 16), icone);
 
         UiKit.Text(g, Text, _selected ? Theme.UiBold : Theme.Ui,
             new Rectangle(38, bounds.Y, Width - 46, bounds.Height),
-            _selected ? Theme.Text : cor, UiKit.LeftMiddle);
+            texto, UiKit.LeftMiddle);
     }
 
     /// <summary>
@@ -405,6 +559,27 @@ internal sealed class NavItem : Control, IPaintsItself
                     new PointF(r.X + 4, r.Y + 10.5f),
                 ]);
                 g.DrawLine(caneta, r.X + 8.5f, r.Y + 10.5f, r.Right - 3.5f, r.Y + 10.5f);
+                break;
+
+            // Livro aberto: o tutorial.
+            case NavGlyph.Tutorial:
+                var meio = r.X + r.Width / 2f;
+                g.DrawLines(caneta,
+                [
+                    new PointF(r.X + 1, r.Y + 3),
+                    new PointF(meio - 0.5f, r.Y + 4.5f),
+                    new PointF(meio - 0.5f, r.Bottom - 2),
+                    new PointF(r.X + 1, r.Bottom - 3.5f),
+                ]);
+                g.DrawLines(caneta,
+                [
+                    new PointF(r.Right - 1, r.Y + 3),
+                    new PointF(meio + 0.5f, r.Y + 4.5f),
+                    new PointF(meio + 0.5f, r.Bottom - 2),
+                    new PointF(r.Right - 1, r.Bottom - 3.5f),
+                ]);
+                g.DrawLine(caneta, r.X + 1, r.Y + 3, r.X + 1, r.Bottom - 3.5f);
+                g.DrawLine(caneta, r.Right - 1, r.Y + 3, r.Right - 1, r.Bottom - 3.5f);
                 break;
 
             // Dois cursores: a configuracao.

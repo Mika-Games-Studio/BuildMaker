@@ -4,3 +4,8 @@ obj/
 appsettings.local.json
 publicado/
 UnityLocalCI.zip
+.idea/
+
+# Estado de execucao escrito pela configuracao de exemplo, que aponta para
+# PREENCHER-DESTINO-RAIZ enquanto ninguem preencheu o destino de verdade.
+PREENCHER-DESTINO-RAIZ/
