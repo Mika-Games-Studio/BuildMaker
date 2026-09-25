@@ -22,4 +22,7 @@ internal static class AppNames
 
     /// <summary>A metade em peso normal.</summary>
     public const string MarkSoft = "Maker";
+
+    /// <summary>Quem assina o programa, no pe da coluna de navegacao.</summary>
+    public const string Copyright = "© Mika Games Studio";
 }

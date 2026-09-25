@@ -354,7 +354,11 @@ internal sealed class NavRail : Panel, IPaintsItself
 
         BackColor = Theme.Rail;
         Width = 208;
-        Padding = new Padding(10, 68, 10, 10);
+
+        // Embaixo sobra espaco para a assinatura do rodape. Os itens de
+        // navegacao sao filhos com Dock=Top e respeitam o padding; sem esta
+        // folga, numa janela baixa o ultimo item cobriria o texto.
+        Padding = new Padding(10, 68, 10, 38);
     }
 
     public event Action<int>? SelectionChanged;
@@ -369,6 +373,17 @@ internal sealed class NavRail : Panel, IPaintsItself
 
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public string HeaderSubtitle { get; init; } = "Unity Local CI";
+
+    /// <summary>
+    /// A assinatura no pe da coluna. Vazio nao desenha nada.
+    ///
+    /// Fica aqui, e nao na barra de status, porque o pe da coluna e o unico
+    /// canto da janela que nao muda de conteudo — a barra de status diz o que o
+    /// servico esta fazendo agora, e uma linha fixa no meio disso disputaria
+    /// espaco com a unica informacao que muda.
+    /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public string FooterText { get; init; } = "";
 
     /// <summary>Marca do programa desenhada no topo — a mesma da bandeja.</summary>
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
@@ -432,6 +447,17 @@ internal sealed class NavRail : Panel, IPaintsItself
             HeaderTitle, HeaderTitleTail, Theme.Text, Theme.TextMuted);
 
         UiKit.Text(g, HeaderSubtitle, Theme.UiSmall, new Rectangle(textoX, 38, Width - textoX - 10, 16),
+            Theme.TextFaint, UiKit.LeftMiddle);
+
+        if (FooterText.Length == 0) return;
+
+        // Alinhado a esquerda com a assinatura do topo, e nao com o icone: as
+        // duas linhas de texto da coluna nascem na mesma vertical.
+        const int alturaDaLinha = 16;
+        const int respiro = 12;
+
+        UiKit.Text(g, FooterText, Theme.UiSmall,
+            new Rectangle(16, Height - alturaDaLinha - respiro, Width - 26, alturaDaLinha),
             Theme.TextFaint, UiKit.LeftMiddle);
     }
 }

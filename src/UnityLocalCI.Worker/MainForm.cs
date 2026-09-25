@@ -175,6 +175,7 @@ public sealed class MainForm : Form
             HeaderTitle = AppNames.MarkStrong,
             HeaderTitleTail = AppNames.MarkSoft,
             HeaderSubtitle = AppNames.Descriptor,
+            FooterText = AppNames.Copyright,
         };
 
         rail.AddItem("Projetos", NavGlyph.Projects);
