@@ -22,20 +22,24 @@ Na máquina onde está o código, com o [.NET SDK 10](https://dotnet.microsoft.c
 powershell -ExecutionPolicy Bypass -File tools\publicar.ps1
 ```
 
-Roda os testes, publica um **executável único** de ~51 MB com o runtime .NET dentro dele e gera o `UnityLocalCI.zip`. Quem receber esse arquivo **não precisa instalar .NET nenhum**.
+Roda os testes e publica um **executável único** de ~51 MB com o runtime .NET dentro dele, assinado. Quem receber esse arquivo **não precisa instalar .NET nenhum**.
+
+Para publicar uma versão para o time, o caminho é uma tag — o workflow monta o `.exe` do Windows e os `.deb` do Ubuntu na mesma release:
+
+```bash
+git tag v1.1.0 && git push origin v1.1.0
+```
 
 ### 2. Instalar
 
-Na máquina de build:
+**O executável é o instalador.** Abra o `.exe` e clique em **Instalar** na faixa do topo da janela. Não há zip para extrair nem script para rodar.
+
+O programa funciona antes de instalar — as builds rodam, a configuração salva. Instalar é o que cria os atalhos, liga o início automático e registra em Aplicativos Instalados. Depois de instalado a faixa não aparece mais, porque a cópia que roda passa a ser a de `Programs\BuildMaker`.
+
+Para automação, sem janela:
 
 ```bash
-powershell -ExecutionPolicy Bypass -File tools\instalar.ps1
-```
-
-Ou, para instalar direto de uma release publicada no GitHub, sem baixar nada à mão (acrescente `-Token <PAT>` se a release for privada):
-
-```bash
-powershell -ExecutionPolicy Bypass -File tools\instalar.ps1 -DeUrl https://.../UnityLocalCI.zip
+UnityLocalCI.exe --instalar
 ```
 
 Instala em `%LOCALAPPDATA%\Programs\BuildMaker`, cria atalho no menu Iniciar e na área de trabalho, e registra o programa em **Configurações → Aplicativos** — é de lá que ele aparece na busca do Windows e pode ser desinstalado. Uma reinstalação por cima preserva o `appsettings.json` e os projetos cadastrados.
@@ -46,9 +50,41 @@ Versões anteriores instalavam direto em `%LOCALAPPDATA%\UnityLocalCI`. O instal
 
 **Não pede administrador**, e o programa também não: ele roda com o privilégio de quem o abriu, sem UAC. O início automático usa a chave `Run` do usuário, que é a que aparece na aba **Inicializar** do Gerenciador de Tarefas — onde se desliga com um clique.
 
-O instalador **não abre o programa no final**. Abra pelo atalho.
+Ao terminar, a cópia instalada abre e a que estava rodando sai de cena. É troca, e não soma: duas cópias vivas disputariam o banco e os arquivos de gatilho, e dois watchers enfileirariam a mesma build.
 
 No Windows ele se chama **BuildMaker** — no atalho, na busca, no Gerenciador de Tarefas e em Aplicativos. O arquivo continua `UnityLocalCI.exe`: o nome do executável, o do serviço e o da credencial são identidade, não rótulo, e renomeá-los quebraria as instalações que já existem. O nome exibido vem da informação de versão do binário.
+
+### 2b. Instalar no Ubuntu
+
+O `.deb` da sua arquitetura, da mesma release:
+
+```bash
+sudo apt install ./buildmaker_1.1.0_amd64.deb
+sudo nano /etc/buildmaker/appsettings.json
+buildmaker verificar
+sudo systemctl enable --now buildmaker
+```
+
+**A versão do Ubuntu não tem janela.** A interface são 35 arquivos de WinForms, que só existe no Windows — e um servidor de build não tem ninguém sentado na frente dele. O serviço é o mesmo: mesmo `Core`, mesmos passos, mesmo banco.
+
+| | |
+|---|---|
+| `buildmaker servico` | roda o CI até receber sinal de parada (é o que o systemd chama) |
+| `buildmaker verificar` | valida a configuração e sai; 0 se estiver boa |
+| `buildmaker projetos` | lista os projetos configurados |
+| `buildmaker buildar [nome]` | aciona o gatilho manual de um projeto, ou de todos |
+
+Onde cada coisa fica:
+
+| | |
+|---|---|
+| `/opt/buildmaker/buildmaker` | o programa (link em `/usr/bin`) |
+| `/etc/buildmaker/appsettings.json` | configuração, declarada como `conffile` — o `apt upgrade` não a sobrescreve |
+| `/var/lib/buildmaker` | banco e histórico; sobrevive ao `apt purge` |
+
+O serviço roda como o usuário `buildmaker`, criado na instalação, e não como root: o Unity e o git são processos filhos e não precisam de poder de root na máquina.
+
+> **O cofre de credenciais é mais fraco aqui.** No Windows o segredo é cifrado pelo sistema com a chave da conta. No Linux ele é um arquivo com permissão `0600` em `~/.config/BuildMaker/credenciais` — quem ler o arquivo lê o segredo. A alternativa seria o Secret Service (libsecret), que é um serviço de sessão gráfica e precisa de uma carteira destrancada por alguém: num servidor sem interface, o pipeline travaria esperando. É o mesmo acordo que `git-credential-store`, `docker` e `kubectl` fazem.
 
 ### 3. Conectar ao GitHub e ativar a licença
 
@@ -130,11 +166,11 @@ Para desfazer: `tools\certificado.ps1 -Remover`.
 
 ### Desinstalar
 
-```bash
-powershell -ExecutionPolicy Bypass -File tools\instalar.ps1 -Desinstalar
-```
+Por **Configurações → Aplicativos → BuildMaker → Desinstalar**. O Windows chama o próprio executável, que sabe se remover:
 
-Ou por **Configurações → Aplicativos → BuildMaker → Desinstalar**, que chama o mesmo script.
+```bash
+UnityLocalCI.exe --desinstalar
+```
 
 Remove arquivos, atalhos, o registro em Aplicativos e o início automático. **Não** apaga o histórico em `%LOCALAPPDATA%\BuildMaker` nem os artefatos das builds.
 
@@ -380,12 +416,13 @@ Também não usamos `--format json`: o log é transmitido em tempo real para `lo
 ## Estrutura
 
 ```
-UnityLocalCI.sln
+UnityLocalCI.slnx
 ├── src/
-│   ├── UnityLocalCI.Worker/      janela, bandeja, modo servico e configuracao
-│   └── UnityLocalCI.Core/
+│   ├── UnityLocalCI.Worker/      net10.0-windows: janela, bandeja, servico, instalador
+│   ├── UnityLocalCI.Cli/         net10.0: o mesmo CI sem janela, para o Ubuntu
+│   └── UnityLocalCI.Core/        net10.0: roda nos dois
 │       ├── Configuration/        opções tipadas, merge de Defaults, validação
-│       ├── Secrets/              Windows Credential Manager (P/Invoke CredRead)
+│       ├── Secrets/              cofre do Windows (CredRead) e arquivo 0600 no Linux
 │       ├── Abstractions/         relógio, executor de processos, Job Object
 │       ├── Git/                  IGitClient e as exclusões do git clean
 │       ├── Unity/                IUnityCliClient e o parser de log
@@ -395,11 +432,14 @@ UnityLocalCI.sln
 │       ├── Pipeline/             Sync, Build, Package, Publish
 │       ├── Publishing/           IArtifactPublisher e FolderPublisher
 │       └── Notifications/        INotifier e LogNotifier
-├── tests/UnityLocalCI.Tests/     52 testes xUnit
+├── tests/UnityLocalCI.Tests/     319 testes xUnit
 ├── unity/                        Builder.cs e instrucoes de instalacao
-├── tools/                        buildar-tudo, install-service, set-secrets, post-merge
+├── tools/                        publicar, certificado, empacotar-deb, gatilhos
+├── .github/workflows/release.yml cada tag vira .exe do Windows e .deb do Ubuntu
 └── config/
 ```
+
+**Por que o `Core` não é mais `-windows`.** Até a 1.0 tudo era `net10.0-windows`, porque tudo rodava só no Windows. O `Core` agora é `net10.0`: as três peças que dependiam do sistema — cofre de credenciais, job object e leitura de memória livre — já estavam atrás de interface, e a escolha entre as duas implementações passou a ser em tempo de execução, no `ServiceRegistration`. O mesmo `Core` compilado serve aos dois.
 
 ## Testes
 
