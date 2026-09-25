@@ -110,6 +110,24 @@ E, para ver a ferramenta funcionando sem tocar em nenhum projeto Unity real, há
 powershell -ExecutionPolicy Bypass -File tools\testar-local.ps1
 ```
 
+### Assinatura do executável
+
+Um executável sem assinatura não tem quem responda por ele: o Windows o trata como programa desconhecido, o SmartScreen avisa, e um antivírus corporativo pode bloquear a execução. Como cada build tem hash novo, o bloqueio volta a cada publicação.
+
+Uma vez por máquina:
+
+```bash
+powershell -ExecutionPolicy Bypass -File tools\certificado.ps1
+```
+
+Cria um certificado de assinatura de código e faz **o seu usuário** confiar nele. A partir daí o `publicar.ps1` assina o executável sozinho, com carimbo de tempo — sem o carimbo, todo binário já distribuído viraria inválido no dia em que o certificado expirasse.
+
+> **O alcance disso.** O certificado é auto-assinado: quem responde pelo programa é você, nesta máquina. Para o Windows aceitar, ele entra na **Raiz Confiável** e nos **Editores Confiáveis** do seu perfil — e daí em diante o seu usuário confia em qualquer programa assinado com aquela chave. É uma decisão de confiança real, e é por isso que está num script que você roda, e não escondido dentro do `publicar.ps1`.
+>
+> Vale só aqui. Em outra máquina o certificado não significa nada, e uma política corporativa pode exigir uma autoridade certificadora reconhecida e recusá-lo assim mesmo. Para o programa ser confiável em qualquer lugar — e para o SmartScreen parar de avisar — o caminho é um certificado OV ou EV comprado de uma CA, que é o que o Discord e o VS Code usam.
+
+Para desfazer: `tools\certificado.ps1 -Remover`.
+
 ### Desinstalar
 
 ```bash

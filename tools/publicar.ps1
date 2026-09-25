@@ -56,6 +56,55 @@ $exe = Join-Path $Saida 'UnityLocalCI.exe'
 $tamanho = [Math]::Round((Get-Item $exe).Length / 1MB, 1)
 Write-Host "   Executavel: $exe ($tamanho MB)"
 
+# --------------------------------------------------------------- assinatura
+
+# Antes de compactar, para o zip levar o executavel ja assinado.
+#
+# Sem assinatura, o executavel nao tem quem responda por ele: o Windows o trata
+# como programa desconhecido e o antivirus corporativo bloqueia a execucao. Como
+# cada build tem hash novo, o bloqueio voltava a cada publicacao.
+#
+# O certificado e criado por tools\certificado.ps1, que roda uma vez por maquina.
+# Aqui ele e so usado — se nao existir, a publicacao continua e avisa: um pacote
+# sem assinar e pior que um assinado, mas melhor que nenhum.
+Passo "Assinando"
+
+$certificado = Get-ChildItem Cert:\CurrentUser\My -ErrorAction SilentlyContinue |
+    Where-Object { $_.Subject -eq 'CN=Mika Games Studio, O=Mika Games Studio, C=BR' -and $_.HasPrivateKey } |
+    Sort-Object NotAfter -Descending |
+    Select-Object -First 1
+
+if (-not $certificado) {
+    Write-Host "   [!]  sem certificado nesta maquina; o pacote sai sem assinatura" -ForegroundColor Yellow
+    Write-Host "   [!]  para assinar: powershell -ExecutionPolicy Bypass -File tools\certificado.ps1" -ForegroundColor Yellow
+} else {
+    # O carimbo de tempo e o que faz a assinatura sobreviver ao vencimento do
+    # certificado: sem ele, todo binario ja distribuido passa a ser invalido no
+    # dia em que o certificado expira.
+    $assinatura = Set-AuthenticodeSignature -FilePath $exe -Certificate $certificado `
+        -HashAlgorithm SHA256 -TimestampServer 'http://timestamp.digicert.com' -ErrorAction Continue
+
+    if (-not $assinatura.TimeStamperCertificate) {
+        Write-Host "   [!]  sem carimbo de tempo (servidor fora do ar?); a assinatura vence com o certificado" -ForegroundColor Yellow
+    }
+
+    switch ($assinatura.Status) {
+        'Valid' {
+            Write-Host "   assinado por $($certificado.Subject.Split(',')[0].Replace('CN=',''))"
+        }
+        'UnknownError' {
+            # Assinou, mas esta maquina nao confia na raiz. E o estado normal
+            # antes de rodar o certificado.ps1 — ou se o dialogo foi recusado.
+            Write-Host "   [!]  assinado, mas esta maquina ainda nao confia no certificado" -ForegroundColor Yellow
+            Write-Host "   [!]  rode: powershell -ExecutionPolicy Bypass -File tools\certificado.ps1" -ForegroundColor Yellow
+        }
+        default {
+            Write-Host "   [!]  a assinatura ficou como '$($assinatura.Status)'" -ForegroundColor Yellow
+            Write-Host "   [!]  $($assinatura.StatusMessage)" -ForegroundColor Yellow
+        }
+    }
+}
+
 if (-not $SemZip) {
     Passo "Compactando"
     if (Test-Path $Zip) { Remove-Item $Zip -Force }
