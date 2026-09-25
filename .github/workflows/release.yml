@@ -173,10 +173,25 @@ jobs:
       - name: Instalar para conferir
         if: matrix.arch == 'amd64'
         run: |
+          set -euxo pipefail
           sudo apt-get install -y ./publicado-deb/*.deb
+
+          # O comando responde e a unidade foi registrada.
           buildmaker versao
           systemctl list-unit-files buildmaker.service
-          test -f /etc/buildmaker/appsettings.json
+
+          # A configuracao precisa ser legivel por QUEM RODA O SERVICO, e nao
+          # por qualquer um: /etc/buildmaker e root:buildmaker 750, entao um
+          # 'test -f' comum falha aqui mesmo com o arquivo no lugar. Testar como
+          # o usuario buildmaker e o que de fato prova que o servico vai subir.
+          sudo -u buildmaker test -r /etc/buildmaker/appsettings.json
+
+          # E ninguem de fora le: o arquivo cita nomes de credencial.
+          if sudo -u nobody test -r /etc/buildmaker/appsettings.json; then
+            echo "::error::a configuracao esta legivel por usuarios de fora do grupo"
+            exit 1
+          fi
+
           sudo apt-get remove -y buildmaker
 
       - uses: actions/upload-artifact@v4
