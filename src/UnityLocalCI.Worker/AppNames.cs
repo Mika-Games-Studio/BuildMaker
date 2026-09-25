@@ -23,6 +23,13 @@ internal static class AppNames
     /// <summary>A metade em peso normal.</summary>
     public const string MarkSoft = "Maker";
 
-    /// <summary>Quem assina o programa, no pe da coluna de navegacao.</summary>
-    public const string Copyright = "© Mika Games Studio";
+    /// <summary>
+    /// Quem assina o programa, no pe da coluna de navegacao.
+    ///
+    /// O ano e fixo, e nao o ano corrente: numa nota de copyright ele marca
+    /// quando a obra foi publicada, e nao a data em que alguem abriu o
+    /// programa. A consequencia e que ele precisa ser atualizado a mao quando
+    /// houver uma versao nova em outro ano.
+    /// </summary>
+    public const string Copyright = "Mika Games Studio © 2026";
 }
