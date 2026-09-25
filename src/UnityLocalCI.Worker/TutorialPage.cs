@@ -90,10 +90,11 @@ internal sealed class TutorialPage : Panel
         Secao("Preparar a máquina");
 
         Passo(1, "Instalar o programa",
-            "Gere o pacote uma vez no repositório e rode o instalador na máquina de build. Ele não pede " +
-            "administrador: instala na sua pasta de usuário, cria os atalhos e liga o início automático.");
+            "Baixe o executável da release e abra. Ele já funciona assim, e a faixa no topo da janela " +
+            "oferece o botão Instalar — que é o que cria os atalhos, liga o início automático e registra " +
+            "o programa em Aplicativos Instalados. Não pede administrador: instala na sua pasta de usuário.");
+        Paragrafo("Para gerar uma cópia a partir deste repositório, sem passar por uma release:", recuo: 34);
         Comando(@"powershell -ExecutionPolicy Bypass -File tools\publicar.ps1");
-        Comando(@"powershell -ExecutionPolicy Bypass -File tools\instalar.ps1");
 
         Passo(2, "Conectar ao GitHub",
             "Na página Configuração, aba GitHub, clique em \"Conectar ao GitHub\". Ele procura primeiro uma " +

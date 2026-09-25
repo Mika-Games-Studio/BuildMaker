@@ -190,6 +190,26 @@ public sealed class MainForm : Form
         Controls.Add(conteudo);
         Controls.Add(_status);
         Controls.Add(rail);
+
+        // A faixa de instalacao so e criada quando ha o que instalar — rodando
+        // da copia instalada, ela nem chega a existir. E por isso que nao ha um
+        // Visible=false em lugar nenhum: o "some depois de instalado" e o
+        // programa reabrindo do destino, e nao um controle escondido.
+        if (!Instalacao.EstaInstalado)
+        {
+            var faixa = new FaixaDeInstalacao
+            {
+                AoAnotar = passo => _liveLog.Add(new LogLine(
+                    DateTimeOffset.Now, LogLevel.Information, "Instalacao", passo)),
+            };
+
+            // Adicionada por ultimo, e sem mexer no indice: pela mesma regra do
+            // bloco acima, o ultimo a entrar e ancorado primeiro e fica com a
+            // borda externa — aqui, a largura inteira da janela, por cima da
+            // coluna. Instalar e sobre o programa todo, e nao sobre a pagina que
+            // estiver aberta.
+            Controls.Add(faixa);
+        }
     }
 
     private void ShowPage(int index)
