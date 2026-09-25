@@ -1,93 +1,108 @@
 using Microsoft.Extensions.Logging.Abstractions;
-using UnityLocalCI.Core.Configuration;
-using UnityLocalCI.Core.Queue;
 using UnityLocalCI.Core.State;
 using Xunit;
 
 namespace UnityLocalCI.Tests;
 
+/// <summary>
+/// O fechamento dos registros que ficaram abertos quando o processo parou.
+///
+/// O que se testa aqui e que nao sobra registro aberto. Um Running ou um Queued
+/// que atravessa a reinicializacao nunca mais se fecha sozinho — e, como build
+/// viva nao pode ser apagada do historico, ele fica na lista para sempre. Foi
+/// exatamente o que aconteceu: quatro linhas presas em Queued desde a antevespera.
+/// </summary>
 public class OrphanRecoveryTests
 {
     private readonly InMemoryBuildStore _store = new();
-    private readonly FakeGitClient _git = new();
-    private readonly RecordingScheduler _scheduler = new();
 
-    private OrphanRecovery Create() => new(
-        _store, _git, _scheduler, new FakeCredentialStore(),
-        new FakeClock(), NullLogger<OrphanRecovery>.Instance);
+    private OrphanRecovery Create()
+        => new(_store, new FakeClock(), NullLogger<OrphanRecovery>.Instance);
 
-    private async Task<long> SeedRunningBuildAsync(string project, string sha)
+    private async Task<long> SemearAsync(BuildStatus status, string project = "Crash")
         => await _store.CreateAsync(new BuildRecord
         {
-            CommitSha = sha,
+            CommitSha = new string('a', 40),
             Project = project,
             Branch = "HML",
-            Status = BuildStatus.Running,
+            Status = status,
             QueuedAt = DateTimeOffset.UnixEpoch,
-            StartedAt = DateTimeOffset.UnixEpoch,
+            StartedAt = status == BuildStatus.Running ? DateTimeOffset.UnixEpoch : null,
         }, default);
 
     [Fact]
-    public async Task Build_orfa_vira_interrupted()
+    public async Task Build_que_estava_correndo_vira_interrompida()
     {
-        var id = await SeedRunningBuildAsync("Crash", Sha('a'));
-        _git.RemoteHeadSha = Sha('b');
+        var id = await SemearAsync(BuildStatus.Running);
 
-        await Create().RecoverAsync(new[] { TestProjects.Create() }, default);
+        await Create().RecoverAsync([TestProjects.Create()], default);
 
-        var record = await _store.GetAsync(id, default);
-        Assert.Equal(BuildStatus.Interrupted, record!.Status);
-        Assert.NotNull(record.FinishedAt);
+        var registro = await _store.GetAsync(id, default);
+        Assert.Equal(BuildStatus.Interrupted, registro!.Status);
+        Assert.NotNull(registro.FinishedAt);
+    }
+
+    /// <summary>
+    /// A que esperava na fila nao chegou a comecar, entao ela e cancelada e nao
+    /// interrompida. A palavra muda o que quem le entende do que aconteceu.
+    /// </summary>
+    [Fact]
+    public async Task Build_que_esperava_na_fila_vira_cancelada()
+    {
+        var id = await SemearAsync(BuildStatus.Queued);
+
+        await Create().RecoverAsync([TestProjects.Create()], default);
+
+        var registro = await _store.GetAsync(id, default);
+        Assert.Equal(BuildStatus.Cancelled, registro!.Status);
+        Assert.NotNull(registro.FinishedAt);
+    }
+
+    /// <summary>
+    /// O ponto de tudo: depois da inicializacao nao pode restar registro aberto,
+    /// nem de projeto que saiu da configuracao. Registro aberto e registro que a
+    /// lixeira se recusa a apagar.
+    /// </summary>
+    [Fact]
+    public async Task Nao_sobra_registro_aberto_nem_de_projeto_desabilitado()
+    {
+        await SemearAsync(BuildStatus.Running);
+        await SemearAsync(BuildStatus.Queued);
+        await SemearAsync(BuildStatus.Running, "ProjetoQueSaiuDaConfiguracao");
+        await SemearAsync(BuildStatus.Queued, "ProjetoQueSaiuDaConfiguracao");
+
+        await Create().RecoverAsync([TestProjects.Create()], default);
+
+        Assert.Empty(await _store.GetByStatusAsync(BuildStatus.Running, default));
+        Assert.Empty(await _store.GetByStatusAsync(BuildStatus.Queued, default));
+    }
+
+    /// <summary>
+    /// A recuperacao nao refaz build nenhuma. Ela reenfileirava o commit quando
+    /// ele ainda era o HEAD, e isso virava um ciclo: sobe, comeca a mesma build
+    /// de quinze minutos, cai no meio, sobe de novo.
+    /// </summary>
+    [Fact]
+    public async Task Nada_volta_para_a_fila()
+    {
+        await SemearAsync(BuildStatus.Running);
+
+        await Create().RecoverAsync([TestProjects.Create()], default);
+
+        Assert.Empty(await _store.GetByStatusAsync(BuildStatus.Queued, default));
     }
 
     [Fact]
-    public async Task Commit_ainda_no_head_volta_para_a_fila()
+    public async Task Build_que_ja_tinha_terminado_nao_e_mexida()
     {
-        await SeedRunningBuildAsync("Crash", Sha('a'));
-        _git.RemoteHeadSha = Sha('a');
+        var id = await SemearAsync(BuildStatus.Succeeded);
 
-        await Create().RecoverAsync(new[] { TestProjects.Create() }, default);
+        await Create().RecoverAsync([TestProjects.Create()], default);
 
-        var job = Assert.Single(_scheduler.Enqueued);
-        Assert.Equal(Sha('a'), job.Commit.Sha);
-        Assert.Equal(BuildTrigger.Recovery, job.Trigger);
+        Assert.Equal(BuildStatus.Succeeded, (await _store.GetAsync(id, default))!.Status);
     }
 
     [Fact]
-    public async Task Commit_ultrapassado_nao_volta_para_a_fila()
-    {
-        await SeedRunningBuildAsync("Crash", Sha('a'));
-        _git.RemoteHeadSha = Sha('b');
-
-        await Create().RecoverAsync(new[] { TestProjects.Create() }, default);
-
-        Assert.Empty(_scheduler.Enqueued);
-    }
-
-    [Fact]
-    public async Task Recuperacao_e_avaliada_projeto_a_projeto()
-    {
-        await SeedRunningBuildAsync("Crash", Sha('a'));
-        await SeedRunningBuildAsync("Desativado", Sha('a'));
-        _git.RemoteHeadSha = Sha('a');
-
-        // So Crash segue habilitado na configuracao.
-        await Create().RecoverAsync(new[] { TestProjects.Create() }, default);
-
-        var job = Assert.Single(_scheduler.Enqueued);
-        Assert.Equal("Crash", job.Project.Name);
-
-        // Ainda assim, a orfa do projeto desativado precisa sair de Running.
-        var orphans = await _store.GetByStatusAsync(BuildStatus.Running, default);
-        Assert.Empty(orphans);
-    }
-
-    [Fact]
-    public async Task Sem_orfas_nada_acontece()
-    {
-        await Create().RecoverAsync(new[] { TestProjects.Create() }, default);
-        Assert.Empty(_scheduler.Enqueued);
-    }
-
-    private static string Sha(char letter) => new(letter, 40);
+    public async Task Sem_registro_aberto_nada_acontece()
+        => await Create().RecoverAsync([TestProjects.Create()], default);
 }

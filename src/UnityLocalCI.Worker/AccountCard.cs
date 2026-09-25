@@ -11,13 +11,15 @@ namespace UnityLocalCI.App;
 /// </summary>
 internal sealed class AccountCard : Control, IPaintsItself
 {
-    private const int Foto = 52;
+    private const int Foto = 56;
     private const int Margem = 14;
 
     private Image? _retrato;
     private string _titulo = "Nenhuma conta conectada";
     private string? _detalhe;
     private string? _rodape;
+    private string? _selo;
+    private Color _corDoSelo = Theme.Success;
     private Color _corDoTitulo = Theme.TextMuted;
 
     public AccountCard()
@@ -25,9 +27,20 @@ internal sealed class AccountCard : Control, IPaintsItself
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer |
                  ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
 
-        Height = 84;
+        Height = 88;
         BackColor = Theme.Surface;
         Font = Theme.Ui;
+    }
+
+    /// <summary>
+    /// O rotulo ao lado do nome — CONECTADA e as suas variantes — com a bolinha
+    /// na frente, do mesmo jeito que a coluna de estado das grades.
+    /// </summary>
+    public void Selo(string? texto, Color cor)
+    {
+        _selo = texto;
+        _corDoSelo = cor;
+        Invalidate();
     }
 
     /// <summary>
@@ -79,8 +92,30 @@ internal sealed class AccountCard : Control, IPaintsItself
 
         var y = (Height - total) / 2;
 
-        TextRenderer.DrawText(g, _titulo, Theme.UiBold, new Rectangle(textoX, y, largura, alturaDoTitulo),
-            _corDoTitulo, TextFormatFlags.EndEllipsis);
+        var larguraDoTitulo = TextRenderer
+            .MeasureText(g, _titulo, Theme.UiBold, new Size(largura, alturaDoTitulo),
+                TextFormatFlags.NoPadding)
+            .Width;
+
+        TextRenderer.DrawText(g, _titulo, Theme.UiBold,
+            new Rectangle(textoX, y, Math.Min(largura, larguraDoTitulo), alturaDoTitulo),
+            _corDoTitulo, TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding);
+
+        if (_selo is not null)
+        {
+            var seloX = textoX + larguraDoTitulo + 12;
+            var faixa = new Rectangle(seloX, y, Math.Max(0, Width - seloX - Margem), alturaDoTitulo);
+
+            if (faixa.Width > 60)
+            {
+                UiKit.StatusDot(g, faixa, _corDoSelo);
+
+                TextRenderer.DrawText(g, _selo, Theme.StatusLabel,
+                    new Rectangle(faixa.X + 12, faixa.Y, faixa.Width - 12, faixa.Height),
+                    _corDoSelo, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+            }
+        }
+
         y += alturaDoTitulo + 2;
 
         if (_detalhe is not null)

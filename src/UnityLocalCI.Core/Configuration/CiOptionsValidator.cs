@@ -93,8 +93,6 @@ public sealed class CiOptionsValidator : IValidateOptions<CiOptions>
 
         if (string.IsNullOrWhiteSpace(options.State.DatabasePath))
             errors.Add("State.DatabasePath nao configurado.");
-        if (string.IsNullOrWhiteSpace(options.State.LogFolder))
-            errors.Add("State.LogFolder nao configurado.");
 
         return errors.Count == 0
             ? ValidateOptionsResult.Success

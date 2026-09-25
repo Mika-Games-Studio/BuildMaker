@@ -9,14 +9,14 @@ namespace UnityLocalCI.Core.Publishing;
 
 public interface IGlobalStatusWriter
 {
-    /// <summary>Reescreve o _STATUS-GERAL.txt com o estado de todos os projetos.</summary>
+    /// <summary>Reescreve o geral.json com o estado de todos os projetos.</summary>
     Task WriteAsync(CancellationToken ct);
 }
 
 /// <summary>
-/// O _STATUS-GERAL.txt consolida todos os projetos num arquivo so, na raiz do
-/// compartilhamento. Reescrito sempre que qualquer build termina ou entra em
-/// execucao.
+/// O geral.json consolida todos os projetos num arquivo so, em
+/// %LOCALAPPDATA%\BuildMaker\status. Reescrito sempre que qualquer build termina
+/// ou entra em execucao.
 ///
 /// E singleton e serializa as escritas: duas builds de projetos diferentes podem
 /// terminar no mesmo instante, e sem o lock uma sobrescreveria a leitura da
@@ -48,9 +48,17 @@ public sealed class GlobalStatusWriter : IGlobalStatusWriter
     public async Task WriteAsync(CancellationToken ct)
     {
         var configuration = _options.CurrentValue;
-        var path = configuration.Scheduler.GlobalStatusFile;
 
-        if (string.IsNullOrWhiteSpace(path)) return;
+        // Caminho fixo, sem configuracao.
+        //
+        // Ele ja foi configuravel, e isso deu errado de um jeito silencioso: um
+        // caminho relativo — como o "PREENCHER-DESTINO-RAIZ\_STATUS-GERAL.txt"
+        // que vinha no modelo — se resolve contra o diretorio de trabalho, e o
+        // programa passava a escrever dentro da propria pasta de instalacao,
+        // criando ali uma pasta com o nome do proprio placeholder. Este arquivo
+        // descreve o estado do CI, nao um entregavel: o lugar dele e junto do
+        // resto dos dados do aplicativo.
+        var path = AppPaths.DefaultGlobalStatusFile;
 
         // Tudo sob o lock, leitura inclusive: o objetivo e que o arquivo reflita
         // um instante coerente, nao apenas que a escrita nao se intercale.
@@ -66,10 +74,22 @@ public sealed class GlobalStatusWriter : IGlobalStatusWriter
             // logo abaixo de uma linha marcada como FALHOU.
             var running = rows.Count(r => r.IsRunning);
 
-            var content = StatusFormatter.FormatGlobalStatus(
-                _clock.UtcNow, rows, snapshot.Waiting, running, snapshot.MaxConcurrentBuilds);
+            var document = new GlobalStatusDocument(
+                GeradoEm: _clock.UtcNow.ToLocalTime(),
+                NaFila: snapshot.Waiting,
+                EmExecucao: running,
+                MaximoSimultaneo: snapshot.MaxConcurrentBuilds,
+                Projetos: rows.Select(r => new GlobalProjectDocument(
+                    Projeto: r.Project,
+                    EmExecucao: r.IsRunning,
+                    IniciouEm: r.RunningSince?.ToLocalTime(),
+                    UltimaBuild: r.LastFinished is { } last ? StatusDocuments.Describe(last) : null)).ToList());
 
-            await AtomicFile.WriteAllTextAsync(path!, content, ct).ConfigureAwait(false);
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
+
+            await AtomicFile
+                .WriteAllTextAsync(path, StatusDocuments.Serialize(document), ct)
+                .ConfigureAwait(false);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {

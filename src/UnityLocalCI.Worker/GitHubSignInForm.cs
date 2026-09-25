@@ -28,7 +28,7 @@ internal sealed class GitHubSignInForm : Form
         Dock = DockStyle.Top,
         Height = 54,
         Font = new Font(Theme.Mono.FontFamily, 22f, FontStyle.Bold),
-        ForeColor = Theme.Accent,
+        ForeColor = Theme.AccentHover,
         TextAlign = ContentAlignment.MiddleCenter,
     };
 
@@ -89,7 +89,7 @@ internal sealed class GitHubSignInForm : Form
         Theme.Apply(this);
         _explicacao.ForeColor = Theme.TextMuted;
         _situacao.ForeColor = Theme.TextMuted;
-        _codigo.ForeColor = Theme.Accent;
+        _codigo.ForeColor = Theme.AccentHover;
     }
 
     private void BuildLayout()

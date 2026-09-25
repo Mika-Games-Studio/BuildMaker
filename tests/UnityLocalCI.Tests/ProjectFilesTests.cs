@@ -168,8 +168,15 @@ public class ProjectFilesTests : IDisposable
         options.Projects[0].Repository!.WorkspacePath = @"C:\ci\workspace\CrashUnity";
         options.Projects[0].Repository!.PatCredentialName = null;
         options.Projects[0].Unity = new UnityOptions { EditorVersion = "2022.3.62f3", ExecuteMethod = "Builder.PerformBuild", TimeoutMinutes = 90 };
-        options.Projects[0].Publishing = new PublishingOptions { StagingFolder = @"C:\ci\staging", ArtifactFolder = @"D:\builds\crash" };
         options.Projects[0].Retention = new RetentionOptions { KeepLastBuilds = 10 };
+
+        // As pastas sao dos padroes, nao do projeto: a de destino e uma so para
+        // todos, e o staging tambem.
+        options.Defaults.Publishing = new PublishingOptions
+        {
+            StagingFolder = @"C:\ci\staging",
+            ArtifactFolder = @"D:\builds",
+        };
 
         var problemas = ConfigFile.Save(ConfigPath, options, new FakeCredentialStore());
 

@@ -1,3 +1,5 @@
+using UnityLocalCI.Core.Unity;
+
 namespace UnityLocalCI.Core.Git;
 
 /// <summary>
@@ -20,11 +22,23 @@ public static class GitCleanArguments
         "UserSettings/",
     };
 
+    /// <summary>
+    /// Caminhos que o CI escreve dentro do projeto e que tambem sobrevivem ao clean.
+    ///
+    /// Nao sao cache: sao arquivos nossos. Se o clean os apagasse, o Sync os
+    /// reescreveria logo em seguida com data nova, e o Unity recompilaria os
+    /// assemblies de editor a cada build por causa disso. Ver <see cref="BuilderScript"/>.
+    /// </summary>
+    public static readonly IReadOnlyList<string> CiOwnedPaths = new[]
+    {
+        BuilderScript.RelativeFolder + "/",
+    };
+
     /// <summary>Monta 'clean -xdf -e Library/ -e Temp/ ...'.</summary>
     public static IReadOnlyList<string> Build()
     {
         var args = new List<string> { "clean", "-xdf" };
-        foreach (var path in PreservedPaths)
+        foreach (var path in PreservedPaths.Concat(CiOwnedPaths))
         {
             args.Add("-e");
             args.Add(path);

@@ -38,7 +38,6 @@ public sealed class SchedulerOptions
     /// <summary>RAM fisica livre minima para uma build tomar vaga no semaforo. Abaixo disso o job e adiado, nunca descartado.</summary>
     public int MinFreeRamGb { get; set; } = 12;
 
-    public string? GlobalStatusFile { get; set; }
 
     /// <summary>Intervalo de reavaliacao quando um job esta adiado por falta de recurso.</summary>
     public int ResourceRecheckSeconds { get; set; } = 30;
@@ -49,8 +48,8 @@ public sealed class SchedulerOptions
 
 public sealed class StateOptions
 {
-    public string DatabasePath { get; set; } = @"C:\ci\state\unitylocalci.db";
-    public string LogFolder { get; set; } = @"C:\ci\logs";
+    public string DatabasePath { get; set; } = AppPaths.DefaultDatabasePath;
+
 }
 
 public sealed class NotificationOptions
@@ -133,14 +132,12 @@ public sealed class UnityOptions
 public sealed class PackagingOptions
 {
     public string? NamePattern { get; set; }
-    public bool? IncludeLauncher { get; set; }
 }
 
 public sealed class PublishingOptions
 {
     public string? StagingFolder { get; set; }
     public string? ArtifactFolder { get; set; }
-    public bool? MaintainLatestFolder { get; set; }
     public bool? WriteStatusFiles { get; set; }
 }
 

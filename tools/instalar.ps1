@@ -1,8 +1,23 @@
 ﻿<#
-    Instala o UnityLocalCI nesta maquina.
+    Instala o BuildMaker nesta maquina.
 
-    Nao pede administrador: instala em %LOCALAPPDATA%, cria os atalhos do menu
-    Iniciar e da area de trabalho, e liga o inicio automatico com o Windows.
+    Nao pede administrador: instala em %LOCALAPPDATA%\Programs\BuildMaker, cria
+    os atalhos do menu Iniciar e da area de trabalho, registra o programa em
+    Aplicativos Instalados (para aparecer na busca do Windows e poder ser
+    desinstalado por la) e liga o inicio automatico pela chave Run do usuario.
+
+    Em Programs\, e nao direto em %LOCALAPPDATA%\: e ali que o VS Code e o
+    Rider colocam os seus, e a pasta separa o programa dos dados. Os dados do
+    BuildMaker ficam em %LOCALAPPDATA%\BuildMaker, que esta noutro lugar de
+    proposito — desinstalar apaga o programa e nao toca no historico.
+
+    Instalar em C:\Program Files exigiria administrador; instalacao por usuario
+    vive no perfil do usuario, e e assim que todo aplicativo por usuario faz.
+
+    A chave Run, e nao uma tarefa agendada, porque e ela que aparece na aba
+    Inicializar do Gerenciador de Tarefas — onde qualquer um desliga o inicio
+    automatico com um clique, sem precisar saber que existe um Agendador de
+    Tarefas.
 
     Dois modos:
 
@@ -19,25 +34,50 @@ param(
     [string]$Origem,
     [string]$DeUrl,
     [string]$Token,
-    [string]$Destino = (Join-Path $env:LOCALAPPDATA 'UnityLocalCI'),
+    [string]$Destino = (Join-Path $env:LOCALAPPDATA 'Programs\BuildMaker'),
     [switch]$SemAtalhos,
     [switch]$SemInicioAutomatico,
-    [switch]$NaoAbrir,
     [switch]$Desinstalar
 )
 
 $ErrorActionPreference = 'Stop'
 
-$NomeExe   = 'UnityLocalCI.exe'
-$ChaveRun  = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
-$ValorRun  = 'UnityLocalCI'
+# O arquivo continua UnityLocalCI.exe: o nome do executavel e identidade, e
+# renomea-lo quebraria o servico e a credencial ja gravados. O que o Windows
+# mostra vem da informacao de versao do proprio binario, que diz BuildMaker.
+$NomeExe    = 'UnityLocalCI.exe'
+
+$ChaveRun      = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+$ValorRun      = 'BuildMaker'
+$ValorRunAntigo = 'UnityLocalCI'
+$NomeTarefa    = 'BuildMaker'
+
+# A chave que alimenta Configuracoes > Aplicativos > Aplicativos instalados. Em
+# HKCU porque a instalacao e por usuario, em %LOCALAPPDATA%: registrar em HKLM
+# anunciaria para todos os usuarios da maquina um programa que so existe para um.
+$ChaveDesinstalar = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\BuildMaker'
+
+# Onde as versoes anteriores instalavam. A configuracao e os projetos do usuario
+# vivem la dentro e precisam vir junto; o resto e programa, e vai embora.
+$DestinoAntigo = Join-Path $env:LOCALAPPDATA 'UnityLocalCI'
 
 function Passo($t) { Write-Host ""; Write-Host "== $t" -ForegroundColor Cyan }
 function Ok($t)    { Write-Host "   [ok] $t" }
 function Aviso($t) { Write-Host "   [!]  $t" -ForegroundColor Yellow }
 function Erro($t)  { Write-Host "   [ERRO] $t" -ForegroundColor Red; exit 1 }
 
-function CaminhoAtalho($pasta) { Join-Path $pasta 'UnityLocalCI.lnk' }
+function EhAdministrador {
+    $identidade = [Security.Principal.WindowsIdentity]::GetCurrent()
+    (New-Object Security.Principal.WindowsPrincipal $identidade).IsInRole(
+        [Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+# O nome do atalho e o que aparece na area de trabalho e na busca do Windows.
+function CaminhoAtalho($pasta) { Join-Path $pasta 'BuildMaker.lnk' }
+
+# O nome anterior, para a instalacao nova nao deixar dois atalhos para o mesmo
+# programa na area de trabalho.
+function CaminhoAtalhoAntigo($pasta) { Join-Path $pasta 'UnityLocalCI.lnk' }
 $menuIniciar = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
 $areaTrabalho = [Environment]::GetFolderPath('Desktop')
 
@@ -54,21 +94,39 @@ if ($Desinstalar) {
     }
 
     Remove-ItemProperty -Path $ChaveRun -Name $ValorRun -ErrorAction SilentlyContinue
-    Ok "inicio automatico removido"
-
-    foreach ($p in $menuIniciar, $areaTrabalho) {
-        $lnk = CaminhoAtalho $p
-        if (Test-Path $lnk) { Remove-Item $lnk -Force; Ok "atalho removido de $p" }
+    if (Get-ScheduledTask -TaskName $NomeTarefa -ErrorAction SilentlyContinue) {
+        if (EhAdministrador) {
+            Unregister-ScheduledTask -TaskName $NomeTarefa -Confirm:$false
+            Ok "tarefa de inicio automatico removida"
+        } else {
+            Aviso "a tarefa '$NomeTarefa' ficou para tras: remove-la exige administrador"
+            Aviso "rode de novo num PowerShell como administrador, ou apague pelo Agendador de Tarefas"
+        }
+    } else {
+        Ok "inicio automatico removido"
     }
 
-    if (Test-Path $Destino) {
-        Remove-Item $Destino -Recurse -Force
-        Ok "arquivos removidos de $Destino"
+    Remove-Item $ChaveDesinstalar -Recurse -Force -ErrorAction SilentlyContinue
+    Ok "registro em Aplicativos Instalados removido"
+
+    foreach ($p in $menuIniciar, $areaTrabalho) {
+        foreach ($lnk in (CaminhoAtalho $p), (CaminhoAtalhoAntigo $p)) {
+            if (Test-Path $lnk) { Remove-Item $lnk -Force; Ok "atalho removido de $p" }
+        }
+    }
+
+    # Os dois lugares: o atual e o das versoes anteriores. Uma maquina que nunca
+    # reinstalou depois da mudanca so tem o antigo.
+    foreach ($pasta in $Destino, $DestinoAntigo) {
+        if (Test-Path $pasta) {
+            Remove-Item $pasta -Recurse -Force
+            Ok "arquivos removidos de $pasta"
+        }
     }
 
     Write-Host ""
     Write-Host "Desinstalado." -ForegroundColor Green
-    Write-Host "O estado, os logs e os artefatos em C:\ci (ou onde estiverem configurados) NAO foram apagados."
+    Write-Host "O historico em %LOCALAPPDATA%\BuildMaker e os artefatos das builds NAO foram apagados."
     exit 0
 }
 
@@ -123,9 +181,42 @@ Passo "Instalando em $Destino"
 
 Get-Process -Name 'UnityLocalCI' -ErrorAction SilentlyContinue | ForEach-Object {
     Aviso "ha uma instancia rodando; encerrando para substituir os arquivos"
+
+    # O Unity roda como filho do servico, num job object: encerrar o servico
+    # mata a build junto. Ela volta como Interrompida e e reenfileirada no
+    # proximo start, mas o Library fica pela metade — e uma build cancelada no
+    # meio da importacao envenena o cache das proximas.
+    if (Get-Process -Name 'Unity' -ErrorAction SilentlyContinue) {
+        Aviso "ha Unity aberto nesta maquina; se for uma build do CI, ela sera interrompida"
+    }
+
     $_.CloseMainWindow() | Out-Null
     Start-Sleep -Milliseconds 1200
     if (-not $_.HasExited) { $_ | Stop-Process -Force }
+}
+
+# Migracao da instalacao anterior, que ficava direto em %LOCALAPPDATA%.
+#
+# So a configuracao e os projetos vem junto: o resto daquela pasta e programa,
+# e o programa esta sendo reinstalado. Isto acontece antes de qualquer copia,
+# para os arquivos do usuario chegarem ao destino novo como se ja estivessem la.
+if ((Test-Path $DestinoAntigo) -and ($DestinoAntigo -ne $Destino)) {
+    Passo "Migrando a instalacao anterior"
+
+    New-Item -ItemType Directory -Path $Destino -Force | Out-Null
+
+    $configAntigo = Join-Path $DestinoAntigo 'appsettings.json'
+    if ((Test-Path $configAntigo) -and -not (Test-Path (Join-Path $Destino 'appsettings.json'))) {
+        Copy-Item $configAntigo $Destino -Force
+        Ok "appsettings.json trazido da instalacao anterior"
+    }
+
+    $projetosAntigos = Join-Path $DestinoAntigo 'projetos'
+    if ((Test-Path $projetosAntigos) -and -not (Test-Path (Join-Path $Destino 'projetos'))) {
+        Copy-Item $projetosAntigos $Destino -Recurse -Force
+        $quantos = @(Get-ChildItem $projetosAntigos -Filter *.json -ErrorAction SilentlyContinue).Count
+        Ok "$quantos projeto(s) trazidos da instalacao anterior"
+    }
 }
 
 # A configuracao do usuario nao pode ser sobrescrita por uma atualizacao.
@@ -158,6 +249,19 @@ if ($temporario -and (Test-Path $temporario)) { Remove-Item $temporario -Recurse
 $exe = Join-Path $Destino $NomeExe
 Ok $exe
 
+# A pasta antiga sai depois que a nova esta pronta, e nao antes: se a copia
+# falhar no meio, o que existia continua de pe.
+if ((Test-Path $DestinoAntigo) -and ($DestinoAntigo -ne $Destino) -and (Test-Path $exe)) {
+    try {
+        Remove-Item $DestinoAntigo -Recurse -Force
+        Ok "instalacao anterior removida de $DestinoAntigo"
+    } catch {
+        Aviso "nao foi possivel remover a instalacao anterior em ${DestinoAntigo}:"
+        Aviso "   $($_.Exception.Message)"
+        Aviso "Ela nao atrapalha — os atalhos ja apontam para a nova —, mas ocupa espaco."
+    }
+}
+
 # ----------------------------------------------------------------- atalhos
 
 if (-not $SemAtalhos) {
@@ -165,28 +269,106 @@ if (-not $SemAtalhos) {
 
     $shell = New-Object -ComObject WScript.Shell
     foreach ($pasta in $menuIniciar, $areaTrabalho) {
-        $lnk = $shell.CreateShortcut((CaminhoAtalho $pasta))
+        # O atalho com o nome antigo sai: senao ficariam dois, apontando para o
+        # mesmo programa, e a busca do Windows mostraria os dois.
+        $antigo = CaminhoAtalhoAntigo $pasta
+        if (Test-Path $antigo) { Remove-Item $antigo -Force }
+
+        $caminho = CaminhoAtalho $pasta
+        $lnk = $shell.CreateShortcut($caminho)
         $lnk.TargetPath = $exe
         $lnk.WorkingDirectory = $Destino
         $lnk.IconLocation = $exe
         $lnk.Description = 'CI local para projetos Unity'
         $lnk.Save()
-        Ok $pasta
+
+        # O atalho e relido depois de gravado.
+        #
+        # Rodar o instalador de dentro de um aplicativo empacotado (MSIX, ou um
+        # terminal dentro de um) faz o Windows redirecionar escritas em
+        # %LOCALAPPDATA% para dentro do pacote, e o atalho sai apontando para
+        # uma copia em ...\AppData\Local\Packages\<pacote>\LocalCache\.
+        # A copia funciona, mas e invisivel para o resto da maquina — e o
+        # antivirus corporativo a trata como programa desconhecido, porque ela
+        # nao esta onde um programa instalado deveria estar.
+        $gravado = $shell.CreateShortcut($caminho).TargetPath
+        if ($gravado -ne $exe) {
+            Aviso "o atalho em $pasta ficou apontando para:"
+            Aviso "   $gravado"
+            Aviso "Rode este instalador num PowerShell comum, fora de terminal embutido em aplicativo."
+        } else {
+            Ok $pasta
+        }
     }
     [Runtime.InteropServices.Marshal]::ReleaseComObject($shell) | Out-Null
 }
 
 # -------------------------------------------------------- inicio automatico
 
+Passo "Aplicativos Instalados"
+
+# Sem esta chave o programa nao aparece em Configuracoes > Aplicativos, nao e
+# encontrado pela busca do Windows e nao tem como ser desinstalado a nao ser
+# rodando este script na mao — que e como ele estava ate agora.
+$tamanhoKb = [int]((Get-ChildItem $Destino -Recurse -File | Measure-Object Length -Sum).Sum / 1KB)
+$versao = (Get-Item $exe).VersionInfo.FileVersion
+if (-not $versao) { $versao = '1.0.0' }
+
+$desinstalador = "powershell.exe -ExecutionPolicy Bypass -File `"$(Join-Path $Destino 'instalar.ps1')`" -Desinstalar"
+
+New-Item -Path $ChaveDesinstalar -Force | Out-Null
+$entradas = @{
+    DisplayName     = 'BuildMaker'
+    DisplayVersion  = $versao
+    Publisher       = 'BSA Tech'
+    DisplayIcon     = $exe
+    InstallLocation = $Destino
+    UninstallString = $desinstalador
+    EstimatedSize   = $tamanhoKb
+    NoModify        = 1
+    NoRepair        = 1
+}
+foreach ($nome in $entradas.Keys) {
+    $tipo = if ($entradas[$nome] -is [int]) { 'DWord' } else { 'String' }
+    New-ItemProperty -Path $ChaveDesinstalar -Name $nome -Value $entradas[$nome] -PropertyType $tipo -Force | Out-Null
+}
+
+# O desinstalador precisa existir depois que a pasta de origem sumir.
+Copy-Item $PSCommandPath (Join-Path $Destino 'instalar.ps1') -Force
+Ok "registrado como 'BuildMaker' em Aplicativos Instalados"
+
+# -------------------------------------------------------- inicio automatico
+
 if (-not $SemInicioAutomatico) {
     Passo "Inicio automatico"
+
+    # Uma versao intermediaria usou tarefa agendada, porque o programa pedia
+    # elevacao e o Windows nao inicia programa elevado pela chave Run. Foi
+    # revertido: tarefa agendada nao aparece na aba Inicializar do Gerenciador de
+    # Tarefas, e o inicio automatico virava algo que so se desliga sabendo que
+    # existe um Agendador de Tarefas e onde ele fica.
+    if (Get-ScheduledTask -TaskName $NomeTarefa -ErrorAction SilentlyContinue) {
+        if (EhAdministrador) {
+            Unregister-ScheduledTask -TaskName $NomeTarefa -Confirm:$false
+            Ok "tarefa agendada de uma versao anterior removida"
+        } else {
+            Aviso "ha uma tarefa agendada '$NomeTarefa' de uma versao anterior desta ferramenta"
+            Aviso "com ela e a chave Run, o programa abriria duas vezes no logon"
+            Aviso "rode este instalador uma vez como administrador, ou apague a tarefa"
+        }
+    }
+
+    # O nome antigo do valor sai junto: com os dois, a aba Inicializar mostraria
+    # duas entradas para o mesmo programa.
+    Remove-ItemProperty -Path $ChaveRun -Name $ValorRunAntigo -ErrorAction SilentlyContinue
 
     # Aspas no caminho: %LOCALAPPDATA% costuma ter espaco no nome do usuario, e
     # sem elas a shell corta no primeiro espaco.
     New-Item -Path $ChaveRun -Force | Out-Null
     Set-ItemProperty -Path $ChaveRun -Name $ValorRun -Value "`"$exe`""
     Ok "o app abrira junto com o Windows"
-    Write-Host "      (desligue pelo menu do icone na bandeja, ou rode com -SemInicioAutomatico)"
+    Write-Host "      (desligue pela aba Inicializar do Gerenciador de Tarefas, pelo menu"
+    Write-Host "       do icone na bandeja, ou instale com -SemInicioAutomatico)"
 }
 
 # ------------------------------------------------------------------- final
@@ -211,16 +393,25 @@ Write-Host ""
 Write-Host "Instalado." -ForegroundColor Green
 Write-Host ""
 Write-Host "  Executavel .....: $exe"
-Write-Host "  Atalhos ........: menu Iniciar e area de trabalho"
+Write-Host "  Atalhos ........: menu Iniciar e area de trabalho, como 'BuildMaker'"
+Write-Host "  Aplicativos ....: aparece como 'BuildMaker', com desinstalar"
 Write-Host "  Inicio automatico: $(if ($SemInicioAutomatico) { 'desligado' } else { 'ligado' })"
 Write-Host ""
 Write-Host "Fechar a janela no X esconde o app na bandeja e as builds continuam."
 Write-Host "Para sair de verdade, botao direito no icone da bandeja e Sair."
 Write-Host ""
-Write-Host "Para desinstalar:  instalar.ps1 -Desinstalar"
+Write-Host "Para desinstalar: por Configuracoes > Aplicativos, ou instalar.ps1 -Desinstalar"
 
-if (-not $NaoAbrir) {
-    Start-Process $exe
-    Write-Host ""
-    Write-Host "App iniciado." -ForegroundColor Green
-}
+# O instalador nao abre o programa.
+#
+# Ele abria, com Start-Process, e o antivirus corporativo passou a marcar a
+# relacao: um executavel sem assinatura de fornecedor iniciado pelo
+# powershell.exe e um padrao que o Behavior Monitoring do Apex One registra e
+# bloqueia ("Detectado programa recem-encontrado"). Aberto pelo atalho, quem
+# inicia e o Explorer, que e como um programa de area de trabalho comeca.
+#
+# Nada aqui engana o antivirus: o executavel e o mesmo, no mesmo lugar. O que
+# muda e o instalador parar de lancar o programa de um jeito que nenhum
+# instalador de verdade usa.
+Write-Host ""
+Write-Host "Abra o BuildMaker pelo atalho da area de trabalho ou do menu Iniciar."

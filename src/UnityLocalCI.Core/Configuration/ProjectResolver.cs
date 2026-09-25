@@ -71,12 +71,17 @@ public static class ProjectResolver
                 u?.TimeoutMinutes ?? du.TimeoutMinutes ?? FallbackTimeoutMinutes,
                 u?.ExtraArgs ?? du.ExtraArgs ?? Array.Empty<string>()),
             Packaging: new ResolvedPackaging(
-                pk?.NamePattern ?? dpk.NamePattern ?? FallbackNamePattern,
-                pk?.IncludeLauncher ?? dpk.IncludeLauncher ?? true),
+                pk?.NamePattern ?? dpk.NamePattern ?? FallbackNamePattern),
             Publishing: new ResolvedPublishing(
                 pb?.StagingFolder ?? dpb.StagingFolder ?? "",
-                pb?.ArtifactFolder ?? dpb.ArtifactFolder ?? "",
-                pb?.MaintainLatestFolder ?? dpb.MaintainLatestFolder ?? true,
+
+                // So dos padroes, de proposito: a pasta de destino e uma so para
+                // todos os projetos. Cada zip ja tem projeto, branch, data e
+                // commit no nome, entao uma pasta por jogo nao separava nada — e
+                // era mais um campo para preencher a cada projeto novo, com a
+                // chance de um deles apontar para outro lugar sem ninguem ver.
+                dpb.ArtifactFolder ?? "",
+
                 pb?.WriteStatusFiles ?? dpb.WriteStatusFiles ?? true),
             Retention: new ResolvedRetention(
                 rt?.KeepLastBuilds ?? drt.KeepLastBuilds ?? FallbackKeepLastBuilds,

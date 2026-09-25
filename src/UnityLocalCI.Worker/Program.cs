@@ -97,6 +97,8 @@ internal static class Program
         var configPath = ConfigFile.DefaultPath;
         var controller = new HostController(liveLog, configPath);
 
+        RegistrarEncerramento(liveLog);
+
         using var form = new MainForm(controller, liveLog, configPath);
         using var tray = new TrayPresence(form, controller);
         form.Tray = tray;
@@ -118,5 +120,35 @@ internal static class Program
         return Task.Run(async () => await controller.DisposeAsync()).Wait(TimeSpan.FromSeconds(20))
             ? 0
             : 1;
+    }
+
+    /// <summary>
+    /// Registra no log da janela por que o programa esta encerrando.
+    ///
+    /// O log vive so enquanto o programa vive, entao a linha do ProcessExit
+    /// nunca sera lida por ninguem — e as outras tres serao. Uma excecao na
+    /// thread da janela, ou uma tarefa que morreu sem dono, nao encerram o
+    /// programa: elas aparecem aqui, na aba de log, com o processo ainda de pe.
+    /// E disso que se precisa para entender o que acabou de acontecer.
+    /// </summary>
+    private static void RegistrarEncerramento(LiveLog log)
+    {
+        void Anotar(string o_que) => log.Add(new LogLine(
+            DateTimeOffset.Now, LogLevel.Error, "Encerramento", o_que));
+
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+            Anotar($"excecao nao tratada (encerrando: {e.IsTerminating}): {e.ExceptionObject}");
+
+        // Excecao na thread da janela. O WinForms mostraria uma caixa de dialogo
+        // e seguiria; registrar antes e o que permite saber que ela existiu.
+        Application.ThreadException += (_, e) =>
+            Anotar($"excecao na thread da janela: {e.Exception}");
+
+        TaskScheduler.UnobservedTaskException += (_, e) =>
+            Anotar($"tarefa com excecao sem dono: {e.Exception}");
+
+        Application.ApplicationExit += (_, _) => Anotar("laco de mensagens encerrado (Application.Exit ou janela fechada)");
+
+        AppDomain.CurrentDomain.ProcessExit += (_, _) => Anotar("processo saindo");
     }
 }

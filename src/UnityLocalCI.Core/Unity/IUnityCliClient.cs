@@ -7,7 +7,6 @@ public sealed record UnityBuildRequest
     public required string BuildTarget { get; init; }
     public required string ExecuteMethod { get; init; }
     public required string OutputPath { get; init; }
-    public required string LogFilePath { get; init; }
     public required TimeSpan Timeout { get; init; }
     public required IReadOnlyList<string> ExtraArgs { get; init; }
 

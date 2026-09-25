@@ -15,7 +15,7 @@ public class ConfigurationTests
             {
                 Watcher = new WatcherOptions { PollIntervalSeconds = 60, DebounceSeconds = 120 },
                 Unity = new UnityOptions { EditorVersion = "6000.0.47f1", TimeoutMinutes = 90 },
-                Publishing = new PublishingOptions { StagingFolder = @"C:\ci\staging" },
+                Publishing = new PublishingOptions { StagingFolder = @"C:\ci\staging", ArtifactFolder = @"C:\ci\artifacts" },
                 Retention = new RetentionOptions { KeepLastBuilds = 10, MinFreeDiskGb = 50 },
             },
         };
@@ -29,7 +29,6 @@ public class ConfigurationTests
                 Branch = "HML",
                 WorkspacePath = @"C:\ci\workspace\crash",
             },
-            Publishing = new PublishingOptions { ArtifactFolder = @"C:\ci\artifacts\crash" },
         });
 
         options.Projects.Add(new ProjectOptions
@@ -43,7 +42,6 @@ public class ConfigurationTests
             },
             // Projetos diferentes costumam estar em versoes diferentes do editor.
             Unity = new UnityOptions { EditorVersion = "6000.0.32f1" },
-            Publishing = new PublishingOptions { ArtifactFolder = @"C:\ci\artifacts\mines" },
         });
 
         return options;

@@ -34,7 +34,6 @@ public class ReadOnlyFieldsTests
     [InlineData(nameof(ProjectView.Url))]
     [InlineData(nameof(ProjectView.Branch))]
     [InlineData(nameof(ProjectView.WorkspacePath))]
-    [InlineData(nameof(ProjectView.ArtifactFolder))]
     [InlineData(nameof(ProjectView.BuildTarget))]
     [InlineData(nameof(ProjectView.Enabled))]
     public void O_resto_continua_editavel(string nome)

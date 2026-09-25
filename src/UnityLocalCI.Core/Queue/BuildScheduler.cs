@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -29,7 +30,13 @@ public sealed class BuildScheduler : BackgroundService, IBuildScheduler
     private readonly int _maxConcurrentBuilds;
     private readonly TimeSpan _resourceRecheck;
 
+    private readonly ConcurrentDictionary<long, CancellationTokenSource> _emAndamento = new();
+
+    /// <summary>Builds que quem esta na janela mandou parar.</summary>
+    private readonly ConcurrentDictionary<long, byte> _canceladas = new();
+
     private int _running;
+    private volatile bool _pausada;
 
     public BuildScheduler(
         IServiceScopeFactory scopeFactory,
@@ -68,7 +75,7 @@ public sealed class BuildScheduler : BackgroundService, IBuildScheduler
     }
 
     public SchedulerSnapshot Snapshot()
-        => new(_queues.Values.Count(q => q.HasPending), Volatile.Read(ref _running), _maxConcurrentBuilds);
+        => new(_queues.Values.Count(q => q.HasPending), Volatile.Read(ref _running), _maxConcurrentBuilds, _pausada);
 
     public async Task<long?> EnqueueAsync(
         ResolvedProject project, CommitInfo commit, BuildTrigger trigger, CancellationToken ct)
@@ -107,7 +114,7 @@ public sealed class BuildScheduler : BackgroundService, IBuildScheduler
                 "[{Project}] build {Replaced} ({ReplacedSha}) foi substituida na fila por {BuildId} ({Sha}).",
                 project.Name, replaced.BuildId, replaced.Commit.ShortSha, buildId, commit.ShortSha);
 
-            await MarkCancelledAsync(replaced, ct).ConfigureAwait(false);
+            await MarkAsync(replaced, "Substituida na fila por um commit mais recente.", ct).ConfigureAwait(false);
         }
 
         _logger.LogInformation(
@@ -131,6 +138,7 @@ public sealed class BuildScheduler : BackgroundService, IBuildScheduler
             try
             {
                 await queue.WaitForPendingAsync(stoppingToken).ConfigureAwait(false);
+                await WaitForResumeAsync(stoppingToken).ConfigureAwait(false);
                 await WaitForResourcesAsync(queue, stoppingToken).ConfigureAwait(false);
 
                 await _globalSlots.WaitAsync(stoppingToken).ConfigureAwait(false);
@@ -215,12 +223,84 @@ public sealed class BuildScheduler : BackgroundService, IBuildScheduler
         }
     }
 
+    /// <summary>
+    /// Segura o consumidor enquanto a fila estiver pausada.
+    ///
+    /// A espera e ativa de meio em meio segundo, e nao por evento, de proposito:
+    /// pausar e retomar acontecem uma vez por dia, e meio segundo de atraso ao
+    /// retomar custa menos que um sinal a mais para manter certo.
+    /// </summary>
+    private async Task WaitForResumeAsync(CancellationToken ct)
+    {
+        var avisou = false;
+
+        while (_pausada && !ct.IsCancellationRequested)
+        {
+            if (!avisou)
+            {
+                _logger.LogInformation("Fila pausada: nenhuma build nova comeca ate ser retomada.");
+                avisou = true;
+            }
+
+            await _clock.Delay(TimeSpan.FromMilliseconds(500), ct).ConfigureAwait(false);
+        }
+    }
+
+    public bool Paused
+    {
+        get => _pausada;
+        set
+        {
+            if (_pausada == value) return;
+
+            _pausada = value;
+            _logger.LogInformation(value ? "Fila pausada." : "Fila retomada.");
+        }
+    }
+
+    /// <summary>
+    /// A ordem importa: primeiro a build em execucao, depois a fila.
+    ///
+    /// Entre o clique e este metodo o consumidor pode ter tirado o job da fila
+    /// para executar. Tentando a execucao primeiro, o cancelamento pega a build
+    /// no lugar novo dela em vez de errar os dois.
+    /// </summary>
+    public async Task<bool> CancelAsync(long buildId, CancellationToken ct)
+    {
+        if (_emAndamento.TryGetValue(buildId, out var cts))
+        {
+            _canceladas[buildId] = 0;
+            _logger.LogWarning("Build {BuildId} cancelada pela janela.", buildId);
+
+            // Cancel lanca se o proprio source ja foi descartado — o que acontece
+            // quando a build termina no meio deste caminho. Nao e erro: e a build
+            // tendo ganhado a corrida.
+            try { cts.Cancel(); return true; }
+            catch (ObjectDisposedException) { return false; }
+        }
+
+        foreach (var queue in _queues.Values)
+        {
+            if (queue.Remove(buildId) is not { } job) continue;
+
+            _logger.LogWarning("[{Project}] build {BuildId} removida da fila pela janela.",
+                job.Project.Name, buildId);
+
+            await MarkAsync(job, "Removida da fila na janela.", ct).ConfigureAwait(false);
+            return true;
+        }
+
+        return false;
+    }
+
     private async Task RunJobAsync(BuildJob job, CancellationToken stoppingToken)
     {
         // Escopo de DI e CancellationTokenSource proprios: timeout ou travamento
         // de um projeto nao pode alcancar os demais.
         using var scope = _scopeFactory.CreateScope();
         using var buildCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+
+        _emAndamento[job.BuildId] = buildCts;
 
         var runner = scope.ServiceProvider.GetRequiredService<IBuildRunner>();
 
@@ -241,15 +321,35 @@ public sealed class BuildScheduler : BackgroundService, IBuildScheduler
                     job.Project.Name, job.BuildId);
                 throw;
             }
+            catch (OperationCanceledException) when (_canceladas.ContainsKey(job.BuildId))
+            {
+                // Cancelamento pedido na janela: o pipeline ja fechou o registro
+                // como Interrompida, que e o que ele sabia na hora. Aqui a gente
+                // sabe mais — e "cancelada" e a palavra honesta.
+                await MarkAsync(job, "Cancelada na janela.", CancellationToken.None).ConfigureAwait(false);
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "[{Project}] build {BuildId} falhou de forma inesperada.",
                     job.Project.Name, job.BuildId);
             }
+            finally
+            {
+                _emAndamento.TryRemove(job.BuildId, out _);
+                _canceladas.TryRemove(job.BuildId, out _);
+            }
         }
     }
 
-    private async Task MarkCancelledAsync(BuildJob job, CancellationToken ct)
+
+    /// <summary>
+    /// Fecha o registro como Cancelada, dizendo por que.
+    ///
+    /// O motivo e texto e nao um codigo porque e o que aparece na coluna Erro
+    /// da janela: "substituida por um commit mais novo" e "removida da fila"
+    /// sao a mesma situacao para o banco e coisas bem diferentes para quem le.
+    /// </summary>
+    private async Task MarkAsync(BuildJob job, string motivo, CancellationToken ct)
     {
         var record = await _store.GetAsync(job.BuildId, ct).ConfigureAwait(false);
         if (record is null) return;
@@ -257,8 +357,8 @@ public sealed class BuildScheduler : BackgroundService, IBuildScheduler
         await _store.UpdateAsync(record with
         {
             Status = BuildStatus.Cancelled,
-            FinishedAt = _clock.UtcNow,
-            ErrorSummary = "Substituida na fila por um commit mais recente.",
+            FinishedAt = record.FinishedAt ?? _clock.UtcNow,
+            ErrorSummary = motivo,
         }, ct).ConfigureAwait(false);
     }
 }

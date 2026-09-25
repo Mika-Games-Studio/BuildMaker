@@ -27,9 +27,26 @@ public sealed class UnityCliClient : IUnityCliClient
     public async Task<UnityBuildResult> BuildAsync(
         UnityBuildRequest request, Action<string>? onLogLine, CancellationToken ct)
     {
-        var editorLogPath = Path.ChangeExtension(request.LogFilePath, ".unity.log");
-        Directory.CreateDirectory(Path.GetDirectoryName(request.LogFilePath)!);
+        // O '--log-file' do Unity exige um caminho em disco: o editor escreve nele
+        // e nao ha como pedir que devolva o log por outro canal. Entao o arquivo
+        // existe, mas e temporario e morre com a build — o log que sobra e o que
+        // esta em memoria, na janela.
+        var editorLogPath = Path.Combine(
+            Path.GetTempPath(), $"buildmaker-unity-{Guid.NewGuid():N}.log");
 
+        try
+        {
+            return await RunAsync(request, editorLogPath, onLogLine, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            TryDelete(editorLogPath);
+        }
+    }
+
+    private async Task<UnityBuildResult> RunAsync(
+        UnityBuildRequest request, string editorLogPath, Action<string>? onLogLine, CancellationToken ct)
+    {
         var args = new List<string>
         {
             "--non-interactive",
@@ -118,6 +135,20 @@ public sealed class UnityCliClient : IUnityCliClient
             builder.Append(value.Contains(' ') ? $"\"{value}\"" : value);
         }
         return builder.ToString();
+    }
+
+    private void TryDelete(string path)
+    {
+        try
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            // Um log temporario que sobreviveu nao vale falhar uma build que
+            // terminou. O %TEMP% se resolve sozinho.
+            _logger.LogDebug("Nao foi possivel apagar o log temporario {Path}: {Message}", path, exception.Message);
+        }
     }
 
     private IReadOnlyList<string> ReadEditorLog(string path)

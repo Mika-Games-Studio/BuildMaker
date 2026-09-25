@@ -120,6 +120,8 @@ public sealed class HostController : IAsyncDisposable
             .AddEnvironmentVariables("UNITYLOCALCI_");
 
         builder.Logging.ClearProviders();
+        // O unico destino do log: a memoria da janela. Ele vive enquanto o
+        // programa viver, e some com ele. Ver LiveLog.
         builder.Logging.AddProvider(new LiveLogProvider(_liveLog));
 
         builder.Services.AddUnityLocalCI(builder.Configuration, ProjectFiles.FolderFor(_configPath));

@@ -61,6 +61,32 @@ public sealed class ProjectQueue
         lock (_gate) return _pending;
     }
 
+    /// <summary>
+    /// Tira da fila um job que ainda nao comecou, por pedido de quem esta na
+    /// janela. Devolve o job para o chamador registrar o cancelamento, ou nulo
+    /// quando ele nao estava mais aqui.
+    ///
+    /// Nulo e o caso normal da corrida: entre o clique e este metodo, o
+    /// consumidor pode ter retirado o job para executar. Quem chama tenta o
+    /// cancelamento da build em execucao antes, entao a corrida se resolve
+    /// sozinha — e, no pior caso, a build roda.
+    /// </summary>
+    public BuildJob? Remove(long buildId)
+    {
+        lock (_gate)
+        {
+            if (_pending is null || _pending.BuildId != buildId) return null;
+
+            var job = _pending;
+            _pending = null;
+
+            // O sinal do semaforo nao e devolvido de proposito: o consumidor vai
+            // acordar, chamar Take, receber nulo e voltar a esperar. Devolver o
+            // sinal aqui estouraria a contagem maxima.
+            return job;
+        }
+    }
+
     /// <summary>Aguarda haver algo na fila. Nao retira: o job so sai em <see cref="Take"/>.</summary>
     public async Task WaitForPendingAsync(CancellationToken ct)
     {

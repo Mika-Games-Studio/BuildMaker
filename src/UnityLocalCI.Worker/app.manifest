@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1">
+  <assemblyIdentity version="1.0.0.0" name="BuildMaker.app" />
+
+  <!--
+    O programa roda com o privilegio de quem o abriu. Sem UAC.
+
+    Ele ja pediu elevacao, por um motivo real: sem ela o Behavior Monitoring do
+    Apex One o trata como programa recem-encontrado e bloqueia com um dialogo.
+    Elevado, passava. O preco, porem, era alto demais para o que resolvia.
+
+    O Windows nao inicia programa elevado pela chave Run, entao o inicio
+    automatico teve de virar tarefa agendada — e tarefa agendada nao aparece na
+    aba Inicializar do Gerenciador de Tarefas. Quem quisesse desligar o inicio
+    automatico teria de saber que existe um Agendador de Tarefas e onde ele fica.
+    Pela chave Run, esta tudo num lugar que qualquer um encontra e desliga com
+    um clique. Some-se o UAC a cada abertura manual e as builds do Unity rodando
+    elevadas, e o privilegio custava mais do que entregava.
+  -->
+  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">
+    <security>
+      <requestedPrivileges xmlns="urn:schemas-microsoft-com:asm.v3">
+        <requestedExecutionLevel level="asInvoker" uiAccess="false" />
+      </requestedPrivileges>
+    </security>
+  </trustInfo>
+
+  <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
+    <application>
+      <!-- Windows 10 e 11. Sem isto o Windows finge ser o 8 para APIs de versao. -->
+      <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}" />
+      <supportedOS Id="{1f676c76-80e1-4239-95bb-83d0f6d0da78}" />
+      <supportedOS Id="{4a2f28e3-53b9-4441-ba9c-d69d4a4a6e38}" />
+      <supportedOS Id="{35138b9a-5d96-4fbd-8e2d-a2440225f93a}" />
+      <supportedOS Id="{e2011457-1546-43c5-a5fe-008deee3d3f0}" />
+    </application>
+  </compatibility>
+</assembly>

@@ -36,7 +36,6 @@ public sealed record BuildRecord
     public string? ArtifactSha256 { get; init; }
     public string? PublishedPath { get; init; }
     public PublishStatus PublishStatus { get; init; } = PublishStatus.None;
-    public string? LogPath { get; init; }
     public string? ErrorSummary { get; init; }
 
     public string ShortSha => CommitSha.Length >= 7 ? CommitSha[..7] : CommitSha;

@@ -117,6 +117,13 @@ public sealed class RecordingScheduler : IBuildScheduler
     }
 
     public SchedulerSnapshot Snapshot() => new(0, 0, 1);
+
+    public Task<bool> CancelAsync(long buildId, CancellationToken ct) => Task.FromResult(Cancelled.Add(buildId));
+
+    /// <summary>Ids que alguem mandou cancelar.</summary>
+    public HashSet<long> Cancelled { get; } = [];
+
+    public bool Paused { get; set; }
 }
 
 public static class TestProjects
@@ -141,8 +148,8 @@ public static class TestProjects
             ManualTriggerFile: null,
             Watcher: new ResolvedWatcher(pollSeconds, debounceSeconds, 8081),
             Unity: new ResolvedUnity("6000.0.47f1", "WebGL", "Builder.PerformBuild", 90, Array.Empty<string>()),
-            Packaging: new ResolvedPackaging("{project}-{branch}-{date}-{sha}.zip", true),
-            Publishing: new ResolvedPublishing(staging, artifactFolder, true, true),
+            Packaging: new ResolvedPackaging("{project}-{branch}-{date}-{sha}.zip"),
+            Publishing: new ResolvedPublishing(staging, artifactFolder, true),
             Retention: new ResolvedRetention(10, minFreeDiskGb));
 }
 

@@ -71,8 +71,8 @@ internal sealed class SegmentedTabControl : TabControl, IPaintsItself
             primeira.Left - TrackPadding, primeira.Top - TrackPadding,
             ultima.Right + TrackPadding, ultima.Bottom + TrackPadding);
 
-        Theme.FillRounded(g, faixa, Theme.Blend(Theme.Canvas, Theme.Surface, 0.9), 9f);
-        Theme.DrawRounded(g, faixa, Theme.BorderSoft, 9f);
+        Theme.FillRounded(g, faixa, Theme.Rail, 9f);
+        Theme.DrawRounded(g, faixa, Theme.Border, 9f);
 
         for (var index = 0; index < TabCount; index++)
             DrawTab(g, index);

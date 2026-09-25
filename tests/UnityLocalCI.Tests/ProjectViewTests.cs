@@ -70,6 +70,59 @@ public class ProjectViewTests : IDisposable
         Assert.Equal("2022.3.62f3", projeto.Unity?.EditorVersion);
     }
 
+    /// <summary>
+    /// A divergencia e dita na propria linha, e nao so na ajuda de baixo.
+    ///
+    /// Acontece quando o time sobe o projeto de versao e a configuracao fica
+    /// para tras: a build passa a rodar num editor que nao e o do projeto, e o
+    /// erro aparece la na frente, longe daqui.
+    /// </summary>
+    [Fact]
+    public void Versao_do_disco_diferente_da_gravada_aparece_como_divergencia()
+    {
+        var projeto = new ProjectOptions
+        {
+            Name = "Jogo",
+            Unity = new UnityOptions { EditorVersion = "6000.0.32f1" },
+            Repository = new RepositoryOptions { WorkspacePath = CriarProjetoUnity("6000.0.47f1") },
+        };
+
+        var view = new ProjectView(projeto);
+
+        Assert.Contains("6000.0.47f1", view.DetectedEditorVersion, StringComparison.Ordinal);
+        Assert.Contains("diverge", view.DetectedEditorVersion, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Versoes_iguais_nao_acusam_divergencia()
+    {
+        var projeto = new ProjectOptions
+        {
+            Name = "Jogo",
+            Unity = new UnityOptions { EditorVersion = "6000.0.47f1" },
+            Repository = new RepositoryOptions { WorkspacePath = CriarProjetoUnity("6000.0.47f1") },
+        };
+
+        Assert.Equal("6000.0.47f1", new ProjectView(projeto).DetectedEditorVersion);
+    }
+
+    /// <summary>
+    /// Campo vazio herda de Defaults de proposito: acusar divergencia ali seria
+    /// chamar de erro o uso normal.
+    /// </summary>
+    [Fact]
+    public void Versao_em_branco_herda_de_defaults_e_nao_diverge()
+    {
+        var projeto = new ProjectOptions
+        {
+            Name = "Jogo",
+            Repository = new RepositoryOptions { WorkspacePath = CriarProjetoUnity("6000.0.47f1") },
+        };
+
+        Assert.DoesNotContain("diverge", new ProjectView(projeto).DetectedEditorVersion,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
     [Fact]
     public void Workspace_inexistente_nao_inventa_versao()
     {
@@ -82,7 +135,6 @@ public class ProjectViewTests : IDisposable
 
     [Theory]
     [InlineData(nameof(ProjectView.WorkspacePath), typeof(FolderPathEditor))]
-    [InlineData(nameof(ProjectView.ArtifactFolder), typeof(FolderPathEditor))]
     [InlineData(nameof(ProjectView.ManualTriggerFile), typeof(FilePathEditor))]
     public void Campos_de_caminho_abrem_caixa_de_selecao(string propriedade, Type editorEsperado)
     {
@@ -93,10 +145,9 @@ public class ProjectViewTests : IDisposable
     }
 
     [Theory]
-    [InlineData(nameof(GeneralView.LogFolder), typeof(FolderPathEditor))]
     [InlineData(nameof(GeneralView.StagingFolder), typeof(FolderPathEditor))]
+    [InlineData(nameof(GeneralView.ArtifactFolder), typeof(FolderPathEditor))]
     [InlineData(nameof(GeneralView.DatabasePath), typeof(FilePathEditor))]
-    [InlineData(nameof(GeneralView.GlobalStatusFile), typeof(FilePathEditor))]
     public void Caminhos_da_aba_geral_tambem(string propriedade, Type editorEsperado)
     {
         var descritor = TypeDescriptor.GetProperties(typeof(GeneralView))[propriedade];
@@ -117,14 +168,16 @@ public class ProjectViewTests : IDisposable
         var view = new GeneralView(options)
         {
             MaxConcurrentBuilds = 4,
-            LogFolder = @"D:\ci\logs",
+            DatabasePath = @"D:\ci\state\db.sqlite",
             StagingFolder = @"D:\ci\staging",
+            ArtifactFolder = @"D:\entregas",
             EditorVersion = "2022.3.62f3",
         };
 
         Assert.Equal(4, options.Scheduler.MaxConcurrentBuilds);
-        Assert.Equal(@"D:\ci\logs", options.State.LogFolder);
+        Assert.Equal(@"D:\ci\state\db.sqlite", options.State.DatabasePath);
         Assert.Equal(@"D:\ci\staging", options.Defaults.Publishing.StagingFolder);
+        Assert.Equal(@"D:\entregas", options.Defaults.Publishing.ArtifactFolder);
         Assert.Equal("2022.3.62f3", options.Defaults.Unity.EditorVersion);
         Assert.Equal(4, view.MaxConcurrentBuilds);
     }
@@ -158,14 +211,14 @@ public class ProjectViewTests : IDisposable
             Url = " https://github.com/OPAGames/CrashUnity.git ",
             Branch = " crash-aviaturbo-hml ",
             WorkspacePath = @"  C:\ci\workspace\Crash  ",
-            ArtifactFolder = @"  D:\builds\crash  ",
+            ManualTriggerFile = @"  C:\ci\triggers\Crash.txt  ",
         };
 
         Assert.Equal("Crash", projeto.Name);
         Assert.Equal("https://github.com/OPAGames/CrashUnity.git", projeto.Repository!.Url);
         Assert.Equal("crash-aviaturbo-hml", projeto.Repository.Branch);
         Assert.Equal(@"C:\ci\workspace\Crash", projeto.Repository.WorkspacePath);
-        Assert.Equal(@"D:\builds\crash", projeto.Publishing!.ArtifactFolder);
+        Assert.Equal(@"C:\ci\triggers\Crash.txt", projeto.ManualTriggerFile);
     }
 
     public void Dispose()

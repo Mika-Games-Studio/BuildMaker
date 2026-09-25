@@ -1,6 +1,26 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <ApplicationIcon>unitylocalci.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!--
+      O nome que o Windows mostra. Sai daqui, e nao do nome do arquivo: e a
+      informacao de versao do executavel que alimenta o Gerenciador de Tarefas
+      (tanto a lista de processos quanto a aba Inicializar), as propriedades do
+      arquivo e o dialogo do UAC quando ele aparece.
+
+      O arquivo continua UnityLocalCI.exe de proposito. O nome do executavel, o
+      do servico do Windows e o da credencial no cofre sao identidade, nao
+      rotulo: renomear qualquer um deles quebraria as instalacoes que ja existem
+      — o servico nao seria encontrado, a credencial gravada viraria orfa.
+    -->
+    <AssemblyTitle>BuildMaker</AssemblyTitle>
+    <Product>BuildMaker</Product>
+    <Company>BSA Tech</Company>
+    <Description>CI local para projetos Unity</Description>
+    <Version>1.0.0</Version>
   </PropertyGroup>
   <PropertyGroup>
     <!-- WinExe: sem janela de console atras da interface. O modo servico nao

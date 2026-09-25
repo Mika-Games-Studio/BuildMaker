@@ -45,7 +45,7 @@ internal sealed class TrayPresence : IDisposable
         _icon = new NotifyIcon
         {
             Icon = AppIcon.LoadForTray(),
-            Text = "UnityLocalCI",
+            Text = AppNames.Display,
             Visible = true,
             ContextMenuStrip = menu,
         };
@@ -76,7 +76,7 @@ internal sealed class TrayPresence : IDisposable
         if (_explainedHiding) return;
         _explainedHiding = true;
 
-        _icon.BalloonTipTitle = "UnityLocalCI continua em execucao";
+        _icon.BalloonTipTitle = AppNames.Display + " continua em execucao";
         _icon.BalloonTipText = "As builds seguem sendo disparadas. Clique no icone para abrir, " +
                               "ou use o botao direito para sair.";
         _icon.BalloonTipIcon = ToolTipIcon.Info;
@@ -102,7 +102,7 @@ internal sealed class TrayPresence : IDisposable
         MessageBox.Show(
             _form,
             "Nao foi possivel alterar o inicio automatico:" + Environment.NewLine + error,
-            "UnityLocalCI", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            AppNames.Display, MessageBoxButtons.OK, MessageBoxIcon.Warning);
     }
 
     private void Exit()
@@ -116,7 +116,7 @@ internal sealed class TrayPresence : IDisposable
                 "Para o CI rodar sem ninguém logado, registre-o como serviço do Windows com " +
                 "tools\\install-service.ps1." + Environment.NewLine + Environment.NewLine +
                 "Sair mesmo assim?",
-                "UnityLocalCI", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+                AppNames.Display, MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
 
             if (resposta != DialogResult.Yes) return;
         }
@@ -131,10 +131,10 @@ internal sealed class TrayPresence : IDisposable
     {
         var texto = _controller.State switch
         {
-            HostState.Rodando => "UnityLocalCI — em execução",
-            HostState.Iniciando => "UnityLocalCI — iniciando",
-            HostState.Parado => "UnityLocalCI — parado",
-            _ => "UnityLocalCI — falhou ao iniciar",
+            HostState.Rodando => AppNames.Display + " — em execução",
+            HostState.Iniciando => AppNames.Display + " — iniciando",
+            HostState.Parado => AppNames.Display + " — parado",
+            _ => AppNames.Display + " — falhou ao iniciar",
         };
 
         // O NotifyIcon trunca em 63 caracteres e lanca acima disso.

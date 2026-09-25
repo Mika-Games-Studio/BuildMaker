@@ -74,7 +74,6 @@ $config = [ordered]@{
     }
     State = [ordered]@{
         DatabasePath = Join-Path $Raiz 'estado\unitylocalci.db'
-        LogFolder    = Join-Path $Raiz 'logs'
     }
     Defaults = [ordered]@{
         Watcher    = [ordered]@{ PollIntervalSeconds = 10; DebounceSeconds = 5; HookSignalPort = 8081 }

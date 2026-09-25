@@ -144,15 +144,17 @@ internal sealed class TutorialPage : Panel
             "diferentes rodam em paralelo até o limite da fila, que também respeita a RAM livre.");
 
         Secao("Onde o time pega o resultado");
-        Paragrafo("Na pasta de destino de cada projeto:");
-        Lista(
-            "o zip da build, com data, hora e commit no nome",
-            "a pasta latest\\, sempre com a última build que deu certo",
-            "rodar.bat, que sobe um servidor local e abre o jogo no navegador",
-            "_STATUS.txt, _HISTORICO.txt e _STATUS-GERAL.txt, que respondem \"a build saiu?\" sem abrir nada");
+        Paragrafo(
+            "Na pasta de destino de cada projeto ficam os zips das builds, com data, hora e commit no nome — " +
+            "e nada mais. Cada zip contém exatamente o que o Unity produziu. Nenhum arquivo do CI entra ali: " +
+            "o zip é o que vai para o navegador, para a loja ou para quem pediu a build, e arquivo estranho " +
+            "no meio confunde quem recebe e derruba a validação de um portal.");
+        Paragrafo(
+            "O status de cada projeto e o histórico ficam em JSON, em %LOCALAPPDATA%\\BuildMaker\\status.");
         Aviso(
-            "WebGL com compressão não roda abrindo o index.html direto: o navegador precisa do cabeçalho de " +
-            "codificação, senão dá tela preta. É para isso que serve o rodar.bat.");
+            "WebGL não roda abrindo o index.html direto: o navegador bloqueia .wasm e .data por file://, e com " +
+            "compressão ainda falta o cabeçalho de codificação. Dá tela preta sem erro nenhum. Para testar, " +
+            "descompacte o zip e aponte um servidor local para a pasta.");
 
         Secao("Quando alguma coisa falha");
         Paragrafo(
@@ -273,7 +275,7 @@ internal sealed class StepHeader : Control, IPaintsItself
         Theme.FillRounded(g, new Rectangle(0, 2, 22, 22), Theme.AccentSoft, 11f);
 
         UiKit.Text(g, _numero.ToString(), Theme.UiSmallBold, new Rectangle(0, 2, 22, 22),
-            Theme.Accent, UiKit.Centered);
+            Theme.AccentHover, UiKit.Centered);
 
         UiKit.Text(g, Text, Theme.UiBold, new Rectangle(34, 0, Width - 34, Height),
             Theme.Text, UiKit.LeftMiddle);

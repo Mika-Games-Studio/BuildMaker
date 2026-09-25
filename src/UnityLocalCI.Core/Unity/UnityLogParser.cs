@@ -23,17 +23,35 @@ public static partial class UnityLogParser
     /// <summary>Aviso destacado pelo Builder.cs, como a compressao Brotli sem fallback.</summary>
     public const string MarkedWarningPrefix = Marker + " AVISO:";
 
+    /// <summary>
+    /// A explicacao que o Unity nao da.
+    ///
+    /// Estourar os 260 caracteres do Windows nao produz nenhuma mensagem sobre
+    /// tamanho de caminho: produz dezenas de 'DirectoryNotFoundException' em
+    /// arquivos de pacote, 'Host type is not matching any asset type' e 'TypeDB:
+    /// Assembly index ... was not found'. Sem esta linha, quem le o resumo vai
+    /// procurar defeito no projeto Unity — foi o que aconteceu aqui.
+    /// </summary>
+    public const string LongPathHint =
+        Marker + " DICA: ha caminho com 260+ caracteres nos erros, que e o teto do Windows. " +
+        "O Unity nao diz isso em lugar nenhum. Mova o workspace para um caminho curto, " +
+        @"como C:\ci\workspace\<projeto>.";
+
     public static UnityLogSummary Parse(IEnumerable<string> lines)
     {
         var markedErrors = new List<string>();
         var compilationErrors = new List<string>();
         var warnings = new List<string>();
         var generalErrors = new List<string>();
+        var caminhoLongo = false;
 
         foreach (var raw in lines)
         {
             var line = raw.TrimEnd();
             if (line.Length == 0) continue;
+
+            if (!caminhoLongo && line.Length >= WindowsMaxPath && LongPathPattern().IsMatch(line))
+                caminhoLongo = true;
 
             // Os marcadores vem antes dos padroes genericos: o Builder ja decidiu
             // se a linha e erro ou aviso, e adivinhar de novo so erraria.
@@ -79,6 +97,11 @@ public static partial class UnityLogParser
             ? null
             : string.Join(Environment.NewLine, summarySource.Take(MaxSummaryLines));
 
+        // A dica vai na frente: ela explica os erros de baixo, e quem le o
+        // _STATUS.txt le as primeiras linhas.
+        if (caminhoLongo && summary is not null)
+            summary = LongPathHint + Environment.NewLine + summary;
+
         return new UnityLogSummary(markedErrors, compilationErrors, warnings, generalErrors, summary);
     }
 
@@ -97,6 +120,16 @@ public static partial class UnityLogParser
 
     [GeneratedRegex(@"^.+\(\d+,\d+\):\s*warning\s+\w+\d*:", RegexOptions.IgnoreCase)]
     private static partial Regex CompilationWarningPattern();
+
+    /// <summary>O teto do Windows para caminho sem prefixo estendido.</summary>
+    private const int WindowsMaxPath = 260;
+
+    // Um caminho absoluto de 260 caracteres ou mais: entre aspas, entre
+    // apostrofos, ou solto sem espacos. O Unity escreve dos tres jeitos, e sem
+    // as tres formas uma linha comprida com um caminho curto no meio dispararia
+    // a dica errada.
+    [GeneratedRegex(@"(""[A-Za-z]:[\\/][^""\r\n]{256,}""|'[A-Za-z]:[\\/][^'\r\n]{256,}'|[A-Za-z]:[\\/][^\s""'\r\n]{256,})")]
+    private static partial Regex LongPathPattern();
 
     // Erros que nao vem do compilador: o proprio CLI, Emscripten, IL2CPP, build report.
     [GeneratedRegex(@"(^\s*(Error|Fatal)\s*:|BuildFailedException|Build completed with a result of 'Failed'|^Error building Player|UnityEditor\.BuildPlayerWindow.+BuildMethodException|emcc:\s*error|error:\s*undefined symbol|IL2CPP error)", RegexOptions.IgnoreCase)]
