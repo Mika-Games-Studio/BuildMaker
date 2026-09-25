@@ -1,5 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <!-- Segue o alvo do Worker: a suite testa a janela junto com o Core. -->
+    <TargetFramework>net10.0-windows</TargetFramework>
     <IsPackable>false</IsPackable>
     <!-- A janela entra nos testes por causa das telas de configuracao: o que
          elas fazem de util (preencher a versao do Unity sozinha, abrir caixa de
@@ -13,6 +15,7 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\src\UnityLocalCI.Cli\UnityLocalCI.Cli.csproj" />
     <ProjectReference Include="..\..\src\UnityLocalCI.Core\UnityLocalCI.Core.csproj" />
     <ProjectReference Include="..\..\src\UnityLocalCI.Worker\UnityLocalCI.Worker.csproj" />
   </ItemGroup>

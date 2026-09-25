@@ -1,6 +1,19 @@
 <Project>
   <PropertyGroup>
-    <TargetFramework>net10.0-windows</TargetFramework>
+    <!--
+      Sem TargetFramework aqui.
+
+      Ate a versao 1.0 todos os projetos eram net10.0-windows, porque todos
+      rodavam so no Windows. Agora o Core precisa compilar tambem no Linux — e o
+      alvo e quem decide isso, projeto a projeto:
+
+        Core  net10.0           roda nos dois
+        Cli   net10.0           roda nos dois
+        Worker/Tests            net10.0-windows, por causa do WinForms
+
+      Deixar o alvo aqui obrigaria todos a serem a mesma coisa, que e
+      exatamente o que nao queremos mais.
+    -->
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>

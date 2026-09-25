@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- Sem "-windows": este e o executavel do Ubuntu. Ele tambem compila e roda
+         no Windows, e e assim que a gente testa o modo linha de comando sem
+         precisar de uma maquina Linux do lado. -->
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>UnityLocalCI.Cli</RootNamespace>
+
+    <!-- O nome do comando no Linux. No Windows o executavel da janela continua
+         sendo UnityLocalCI.exe, por identidade; aqui nao ha instalacao antiga
+         para preservar, entao vale o nome do produto. -->
+    <AssemblyName>buildmaker</AssemblyName>
+
+    <AssemblyTitle>BuildMaker</AssemblyTitle>
+    <Product>BuildMaker</Product>
+    <Company>BSA Tech</Company>
+    <Description>CI local para projetos Unity, em linha de comando</Description>
+    <Version>1.0.0</Version>
+
+    <!-- Um Main async de verdade: aqui nao ha COM do shell nem thread STA. -->
+    <InvariantGlobalization>false</InvariantGlobalization>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.5" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\UnityLocalCI.Core\UnityLocalCI.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="UnityLocalCI.Tests" />
+  </ItemGroup>
+</Project>

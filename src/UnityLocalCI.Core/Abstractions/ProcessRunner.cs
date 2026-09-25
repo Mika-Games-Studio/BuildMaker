@@ -61,7 +61,12 @@ public sealed class ProcessRunner : IProcessRunner
         process.Start();
         // A associacao acontece logo apos o start; filhos criados a partir daqui
         // herdam o job e morrem junto, mesmo que reparenteiem.
-        job?.Assign(process.Handle);
+        //
+        // O teste do sistema esta repetido aqui de proposito: 'job' so e criado no
+        // Windows, mas o analisador de plataforma nao consegue seguir essa
+        // garantia por dentro de um local. Sem o if ele acusa CA1416, que neste
+        // projeto e erro de compilacao.
+        if (OperatingSystem.IsWindows()) job?.Assign(process.Handle);
 
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
@@ -106,12 +111,17 @@ public sealed class ProcessRunner : IProcessRunner
 
         try
         {
-            job?.TerminateAll();
+            if (OperatingSystem.IsWindows()) job?.TerminateAll();
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Falha ao encerrar o Job Object; caindo para Process.Kill em arvore.");
         }
+
+        // No Linux nao ha job object, e o Process.Kill(entireProcessTree) logo
+        // abaixo e o que sobra. Ele percorre a arvore pelo PPID, entao um neto
+        // que ja tenha sido reparenteado para o init escapa — no Windows o job
+        // pega esse caso. E a diferenca conhecida entre os dois lados.
 
         try
         {
