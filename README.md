@@ -223,6 +223,23 @@ Na primeira vez que a janela se esconde, um balão explica que o programa contin
 
 > **Início automático ≠ serviço.** O atalho de início automático abre o app quando **você** faz login. Para o CI rodar com a máquina ligada e ninguém logado, registre-o como serviço do Windows — ver [Windows Service](#windows-service). Os dois podem conviver: o serviço constrói, e a janela é só para acompanhar.
 
+### Quando uma build morre no meio
+
+Cada commit é construído **no máximo uma vez**: o `last_built_sha` é gravado no momento em que a build entra na fila, e é isso que impede o mesmo commit de virar duas builds.
+
+O efeito colateral aparece quando o processo morre no meio — queda, reinício da máquina, ou o antivírus matando o programa. O commit ficava marcado como construído para sempre, e o merge sumia sem aviso.
+
+Ao religar, o serviço fecha o registro como **INTERROMPIDA** e devolve aquele commit para a fila. Ele volta no ciclo seguinte do watcher, já depois da janela de silêncio.
+
+| | |
+|---|---|
+| **INTERROMPIDA** | volta para a fila, até `Scheduler.MaxInterruptedRetries` vezes (padrão: 1) |
+| **FALHOU** | não volta — a build rodou e deu um veredito sobre aquele commit |
+| **CANCELADA** | não volta — alguém mandou parar |
+| commit que já tem build **SUCESSO** | não volta — o artefato existe, não há o que recuperar |
+
+O teto existe por experiência: uma versão anterior refazia sem condição nenhuma e virava ciclo — sobe, começa a mesma build de quinze minutos, cai, sobe. `MaxInterruptedRetries: 0` desliga e devolve o comportamento antigo, em que só **Construir agora** refaz.
+
 ## A janela
 
 Um executável só, dois modos:
