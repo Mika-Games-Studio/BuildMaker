@@ -16,8 +16,24 @@ public class OrphanRecoveryTests
 {
     private readonly InMemoryBuildStore _store = new();
 
-    private OrphanRecovery Create()
-        => new(_store, new FakeClock(), NullLogger<OrphanRecovery>.Instance);
+    /// <param name="tetoDeRetentativas">
+    /// Zero por padrao nestes testes: eles cobrem o FECHAMENTO dos registros, e
+    /// o reenfileiramento tem suite propria em <see cref="ReenfileiraInterrompidasTests"/>.
+    /// Com o teto ligado, cada um destes casos tambem mexeria no last_built_sha,
+    /// e o que eles afirmam ficaria misturado com outra coisa.
+    /// </param>
+    private OrphanRecovery Create(int tetoDeRetentativas = 0)
+        => new(
+            _store,
+            Microsoft.Extensions.Options.Options.Create(new UnityLocalCI.Core.Configuration.CiOptions
+            {
+                Scheduler = new UnityLocalCI.Core.Configuration.SchedulerOptions
+                {
+                    MaxInterruptedRetries = tetoDeRetentativas,
+                },
+            }),
+            new FakeClock(),
+            NullLogger<OrphanRecovery>.Instance);
 
     private async Task<long> SemearAsync(BuildStatus status, string project = "Crash")
         => await _store.CreateAsync(new BuildRecord

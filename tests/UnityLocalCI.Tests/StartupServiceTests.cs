@@ -99,7 +99,7 @@ public class StartupServiceTests : IDisposable
 
         var servico = new StartupService(
             _store,
-            new OrphanRecovery(_store, new FakeClock(), NullLogger<OrphanRecovery>.Instance),
+            new OrphanRecovery(_store, Options.Create(opcoes), new FakeClock(), NullLogger<OrphanRecovery>.Instance),
             escritor,
             Options.Create(opcoes),
             NullLogger<StartupService>.Instance);
