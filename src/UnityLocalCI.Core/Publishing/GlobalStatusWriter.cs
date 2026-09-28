@@ -29,20 +29,35 @@ public sealed class GlobalStatusWriter : IGlobalStatusWriter
     private readonly IOptionsMonitor<CiOptions> _options;
     private readonly IClock _clock;
     private readonly ILogger<GlobalStatusWriter> _logger;
+    private readonly string _path;
     private readonly SemaphoreSlim _gate = new(1, 1);
 
+    /// <param name="path">
+    /// Onde gravar. Nulo — que e o caso em producao, porque a injecao de
+    /// dependencia nao registra esta string — usa o caminho padrao.
+    ///
+    /// Existe por causa do teste. Antes ele exercitava o caminho de verdade:
+    /// apagava o geral.json da maquina de quem rodasse a suite, escrevia por
+    /// cima e tentava devolver o conteudo no Dispose. Uma suite que mexe nos
+    /// dados do aplicativo instalado esta errada mesmo quando funciona — e
+    /// quando o Dispose nao roda, por causa de uma falha ou de um teste
+    /// interrompido, ela deixa para tras um arquivo de status que descreve um
+    /// estado inventado.
+    /// </param>
     public GlobalStatusWriter(
         IBuildStore store,
         IBuildScheduler scheduler,
         IOptionsMonitor<CiOptions> options,
         IClock clock,
-        ILogger<GlobalStatusWriter> logger)
+        ILogger<GlobalStatusWriter> logger,
+        string? path = null)
     {
         _store = store;
         _scheduler = scheduler;
         _options = options;
         _clock = clock;
         _logger = logger;
+        _path = path ?? AppPaths.DefaultGlobalStatusFile;
     }
 
     public async Task WriteAsync(CancellationToken ct)
@@ -58,7 +73,10 @@ public sealed class GlobalStatusWriter : IGlobalStatusWriter
         // criando ali uma pasta com o nome do proprio placeholder. Este arquivo
         // descreve o estado do CI, nao um entregavel: o lugar dele e junto do
         // resto dos dados do aplicativo.
-        var path = AppPaths.DefaultGlobalStatusFile;
+        //
+        // O parametro do construtor nao reabre essa porta: ele nao vem da
+        // configuracao de ninguem, so do teste.
+        var path = _path;
 
         // Tudo sob o lock, leitura inclusive: o objetivo e que o arquivo reflita
         // um instante coerente, nao apenas que a escrita nao se intercale.
