@@ -15,15 +15,20 @@ public class GlobalStatusWriterTests : IDisposable
         Path.GetTempPath(), "unitylocalci-tests", Guid.NewGuid().ToString("N"));
 
     /// <summary>
-    /// O caminho e fixo: %LOCALAPPDATA%\BuildMaker\status\geral.json. Nao ha
-    /// mais como apontar para outro lugar — era essa configuracao que, com um
-    /// caminho relativo, fazia o programa escrever dentro da propria pasta de
-    /// instalacao.
+    /// Um arquivo descartavel, dentro da pasta temporaria do teste.
+    ///
+    /// Em producao o caminho continua fixo em %LOCALAPPDATA%\BuildMaker, e nao
+    /// ha configuracao que o mude — era justamente essa configuracao que, com um
+    /// caminho relativo, fazia o programa escrever dentro da pasta de instalacao.
+    /// O construtor aceita um caminho so para o teste.
+    ///
+    /// Ate aqui esta suite usava o arquivo de verdade: apagava o geral.json da
+    /// maquina de quem rodasse os testes e tentava devolver o conteudo no
+    /// Dispose. Funcionava quase sempre, e quando nao funcionava deixava o
+    /// aplicativo com um status que descrevia um estado inventado — inclusive
+    /// "1 build em execucao" para uma build que terminara dias antes.
     /// </summary>
-    private readonly string _statusFile = AppPaths.DefaultGlobalStatusFile;
-
-    /// <summary>O arquivo de verdade do aplicativo, para o teste devolve-lo como estava.</summary>
-    private readonly string? _conteudoAnterior;
+    private readonly string _statusFile;
 
     private readonly InMemoryBuildStore _store = new();
     private readonly CiOptions _options;
@@ -31,9 +36,7 @@ public class GlobalStatusWriterTests : IDisposable
     public GlobalStatusWriterTests()
     {
         Directory.CreateDirectory(_root);
-
-        _conteudoAnterior = File.Exists(_statusFile) ? File.ReadAllText(_statusFile) : null;
-        if (File.Exists(_statusFile)) File.Delete(_statusFile);
+        _statusFile = Path.Combine(_root, "geral.json");
 
         _options = new CiOptions
         {
@@ -65,14 +68,12 @@ public class GlobalStatusWriterTests : IDisposable
     {
         try
         {
-            // O teste nao pode deixar a maquina diferente do que encontrou: este
-            // e o arquivo de verdade do aplicativo.
-            if (_conteudoAnterior is not null) File.WriteAllText(_statusFile, _conteudoAnterior);
-            else if (File.Exists(_statusFile)) File.Delete(_statusFile);
-
+            // So a pasta temporaria: nada fora dela foi tocado.
             if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true);
         }
         catch (IOException) { /* limpeza best effort */ }
+
+        GC.SuppressFinalize(this);
     }
 
     private GlobalStatusWriter Create() => new(
@@ -80,7 +81,8 @@ public class GlobalStatusWriterTests : IDisposable
         new StubSnapshotScheduler(),
         new StaticOptionsMonitor<CiOptions>(_options),
         new FakeClock(),
-        NullLogger<GlobalStatusWriter>.Instance);
+        NullLogger<GlobalStatusWriter>.Instance,
+        _statusFile);
 
     private async Task<long> SeedFinishedAsync(string project, BuildStatus status)
     {
@@ -198,7 +200,8 @@ public class GlobalStatusWriterTests : IDisposable
             scheduler,
             new StaticOptionsMonitor<CiOptions>(_options),
             new FakeClock(),
-            NullLogger<GlobalStatusWriter>.Instance);
+            NullLogger<GlobalStatusWriter>.Instance,
+            _statusFile);
 
         scheduler.BlockNext();
         var slow = Task.Run(() => writer.WriteAsync(default));
@@ -232,7 +235,8 @@ public class GlobalStatusWriterTests : IDisposable
             new StubSnapshotScheduler { Result = new SchedulerSnapshot(0, 1, 2) },
             new StaticOptionsMonitor<CiOptions>(_options),
             new FakeClock(),
-            NullLogger<GlobalStatusWriter>.Instance);
+            NullLogger<GlobalStatusWriter>.Instance,
+            _statusFile);
 
         await writer.WriteAsync(default);
 
@@ -257,19 +261,34 @@ public class GlobalStatusWriterTests : IDisposable
     }
 
     /// <summary>
-    /// O arquivo vai sempre para a pasta do aplicativo. Nao ha caminho a
-    /// configurar: era essa configuracao que, com um caminho relativo, fazia o
-    /// programa escrever dentro da propria pasta de instalacao.
+    /// Em producao o arquivo vai sempre para a pasta do aplicativo. Nao ha
+    /// caminho a configurar: era essa configuracao que, com um caminho relativo,
+    /// fazia o programa escrever dentro da propria pasta de instalacao.
+    ///
+    /// O teste afirma isso sobre o caminho padrao, sem escrever nele. Escrever
+    /// no arquivo de verdade para provar que ele e o arquivo de verdade e o que
+    /// esta suite fazia antes, e o preco era mexer nos dados de quem rodasse os
+    /// testes.
     /// </summary>
     [Fact]
-    public async Task Escreve_sempre_na_pasta_do_aplicativo()
+    public void O_caminho_padrao_fica_na_pasta_de_dados_do_aplicativo()
+    {
+        Assert.StartsWith(AppPaths.StatusFolder, AppPaths.DefaultGlobalStatusFile, StringComparison.OrdinalIgnoreCase);
+        Assert.StartsWith(AppPaths.DataRoot, AppPaths.StatusFolder, StringComparison.OrdinalIgnoreCase);
+
+        // Fora da pasta do programa: desinstalar apaga o programa e nao o estado.
+        Assert.DoesNotContain("Programs", AppPaths.DataRoot, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Escreve_no_caminho_que_recebeu()
     {
         await SeedFinishedAsync("Crash", BuildStatus.Succeeded);
 
         await Create().WriteAsync(default);
 
-        Assert.StartsWith(AppPaths.StatusFolder, _statusFile, StringComparison.OrdinalIgnoreCase);
         Assert.True(File.Exists(_statusFile));
+        Assert.StartsWith(_root, _statusFile, StringComparison.OrdinalIgnoreCase);
     }
 }
 

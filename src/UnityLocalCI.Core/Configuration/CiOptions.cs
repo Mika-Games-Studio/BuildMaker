@@ -44,6 +44,30 @@ public sealed class SchedulerOptions
 
     /// <summary>De quanto em quanto tempo tentar reenviar artefatos com copia pendente.</summary>
     public int PendingCopyRetryMinutes { get; set; } = 10;
+
+    /// <summary>
+    /// Quantas vezes um commit cuja build foi INTERROMPIDA volta para a fila
+    /// sozinho, ao religar o servico. Zero desliga, e era o comportamento ate
+    /// aqui.
+    ///
+    /// Interrompida quer dizer que o processo parou no meio: queda, reinicio da
+    /// maquina, ou — o caso comum nesta maquina — a heuristica de ransomware do
+    /// antivirus corporativo matando o programa durante o empacotamento. Sem
+    /// isto o commit fica marcado como construido para sempre, porque o
+    /// last_built_sha e gravado no enfileiramento, e a build some sem que
+    /// ninguem perceba.
+    ///
+    /// NAO vale para FALHOU nem para CANCELADA. Uma build que falhou produziu um
+    /// veredito sobre aquele commit, e refaze-la daria o mesmo veredito; uma
+    /// cancelada foi alguem mandando parar.
+    ///
+    /// O limite existe por causa do que ja aconteceu aqui: a recuperacao
+    /// automatica era incondicional e virava ciclo — sobe, comeca a mesma build
+    /// de quinze minutos, cai, sobe, comeca de novo. Com o teto, o commit volta
+    /// a fila no maximo este numero de vezes e depois espera alguem clicar em
+    /// 'Construir agora'.
+    /// </summary>
+    public int MaxInterruptedRetries { get; set; } = 1;
 }
 
 public sealed class StateOptions

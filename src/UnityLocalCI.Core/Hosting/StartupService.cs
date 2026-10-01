@@ -2,6 +2,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using UnityLocalCI.Core.Configuration;
+using UnityLocalCI.Core.Publishing;
 using UnityLocalCI.Core.State;
 
 namespace UnityLocalCI.Core.Hosting;
@@ -14,17 +15,20 @@ public sealed class StartupService : IHostedService
 {
     private readonly IBuildStore _store;
     private readonly OrphanRecovery _recovery;
+    private readonly IGlobalStatusWriter _globalStatus;
     private readonly IOptions<CiOptions> _options;
     private readonly ILogger<StartupService> _logger;
 
     public StartupService(
         IBuildStore store,
         OrphanRecovery recovery,
+        IGlobalStatusWriter globalStatus,
         IOptions<CiOptions> options,
         ILogger<StartupService> logger)
     {
         _store = store;
         _recovery = recovery;
+        _globalStatus = globalStatus;
         _options = options;
         _logger = logger;
     }
@@ -38,6 +42,17 @@ public sealed class StartupService : IHostedService
 
         await _store.InitializeAsync(cancellationToken).ConfigureAwait(false);
         await _recovery.RecoverAsync(projects, cancellationToken).ConfigureAwait(false);
+
+        // O geral.json e reescrito logo depois da recuperacao.
+        //
+        // Ele so era escrito de dentro do pipeline, quando uma build comeca ou
+        // termina. Se o processo morre no meio de uma — e aqui isso acontece,
+        // porque a heuristica de ransomware do antivirus corporativo mata o
+        // programa durante o empacotamento —, o arquivo fica congelado dizendo
+        // "1 em execucao" para uma build que nao existe mais. A recuperacao logo
+        // acima ja corrigiu isso no banco; sem esta linha, o arquivo que as
+        // pessoas abrem continuava mentindo ate a proxima build terminar.
+        await _globalStatus.WriteAsync(cancellationToken).ConfigureAwait(false);
 
         foreach (var project in projects)
         {

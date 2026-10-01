@@ -54,9 +54,23 @@ public static class ServiceRegistration
         services.AddSingleton<IValidateOptions<CiOptions>, CiOptionsValidator>();
 
         // Infraestrutura
-        services.AddSingleton<ICredentialStore, WindowsCredentialStore>();
+        //
+        // Duas pecas mudam com o sistema: onde mora o segredo e de onde vem a
+        // memoria livre. A escolha e aqui, em tempo de execucao, e nao por
+        // compilacao condicional — assim o mesmo Core compilado serve aos dois, e
+        // o binario do Linux nao precisa ser outro binario.
+        if (OperatingSystem.IsWindows())
+        {
+            services.AddSingleton<ICredentialStore, WindowsCredentialStore>();
+            services.AddSingleton<ISystemResources, WindowsSystemResources>();
+        }
+        else
+        {
+            services.AddSingleton<ICredentialStore, LinuxCredentialStore>();
+            services.AddSingleton<ISystemResources, LinuxSystemResources>();
+        }
+
         services.AddSingleton<IClock, SystemClock>();
-        services.AddSingleton<ISystemResources, WindowsSystemResources>();
         services.AddSingleton<IProcessRunner, ProcessRunner>();
         services.AddSingleton<IGitClient, GitClient>();
         services.AddSingleton<IUnityCliClient, UnityCliClient>();

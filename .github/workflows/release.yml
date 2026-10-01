@@ -1,0 +1,244 @@
+# Cada tag vira uma release com os instaladores dos dois sistemas.
+#
+#   git tag v1.1.0 && git push origin v1.1.0
+#
+# O que sai:
+#
+#   BuildMaker-1.1.0-windows-x64.exe   abre, clica em Instalar
+#   buildmaker_1.1.0_amd64.deb         sudo apt install ./buildmaker_...deb
+#   buildmaker_1.1.0_arm64.deb
+#   SHA256SUMS.txt
+#
+# O executavel do Windows e um arquivo so — app, instalador e desinstalador no
+# mesmo binario, como o do RustDesk. Nao ha zip para extrair nem script para
+# rodar: quem baixa abre.
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+  # Para experimentar o pipeline sem criar tag. Sobe os arquivos como artefato
+  # da execucao, e nao como release.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # ---------------------------------------------------------------- Windows
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Versao a partir da tag
+        id: versao
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            echo "numero=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "numero=0.0.0-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          fi
+
+      # A suite roda antes de qualquer pacote sair. Uma release quebrada e pior
+      # que uma release atrasada: quem baixou ja baixou.
+      - name: Testes
+        run: dotnet test UnityLocalCI.slnx -c Release --nologo
+
+      - name: Publicar
+        run: >
+          dotnet publish src/UnityLocalCI.Worker/UnityLocalCI.Worker.csproj
+          -c Release -r win-x64 --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:EnableCompressionInSingleFile=true
+          -p:Version=${{ steps.versao.outputs.numero }}
+          -o publicado --nologo
+
+      # ---------------------------------------------------------- assinatura
+      #
+      # O certificado chega por secret, em base64, porque um secret so guarda
+      # texto. Se os dois secrets nao existirem, a release sai sem assinatura e
+      # o passo avisa — um pacote sem assinar e pior que um assinado, mas melhor
+      # que nenhum, e nao vale travar a release por isso.
+      #
+      # Para criar os secrets, na maquina onde o certificado foi gerado:
+      #
+      #   $c = Get-ChildItem Cert:\CurrentUser\My |
+      #        Where-Object { $_.Subject -like '*Mika Games Studio*' -and $_.HasPrivateKey }
+      #   $senha = Read-Host -AsSecureString "senha do pfx"
+      #   Export-PfxCertificate -Cert $c -FilePath cert.pfx -Password $senha
+      #   [Convert]::ToBase64String([IO.File]::ReadAllBytes("cert.pfx")) | Set-Clipboard
+      #
+      # e cole em Settings > Secrets > Actions como CERTIFICADO_PFX, com a senha
+      # em CERTIFICADO_SENHA. Apague o cert.pfx do disco depois.
+      #
+      # Vale saber o que isso significa: a chave privada deixa de viver so na
+      # maquina e passa a existir tambem nos servidores do GitHub. Quem obtiver
+      # o secret pode assinar qualquer coisa como Mika Games Studio.
+      - name: Assinar
+        shell: pwsh
+        env:
+          PFX: ${{ secrets.CERTIFICADO_PFX }}
+          SENHA: ${{ secrets.CERTIFICADO_SENHA }}
+        run: |
+          if (-not $env:PFX) {
+            Write-Host "::warning::sem CERTIFICADO_PFX; o executavel sai sem assinatura"
+            exit 0
+          }
+
+          $pfx = Join-Path $env:RUNNER_TEMP 'cert.pfx'
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:PFX))
+
+          try {
+            $cert = [Security.Cryptography.X509Certificates.X509Certificate2]::new(
+              $pfx, $env:SENHA,
+              [Security.Cryptography.X509Certificates.X509KeyStorageFlags]::EphemeralKeySet)
+
+            # O carimbo de tempo e o que faz a assinatura sobreviver ao vencimento
+            # do certificado: sem ele, todo binario ja distribuido vira invalido
+            # no dia em que o certificado expira.
+            $r = Set-AuthenticodeSignature -FilePath publicado\UnityLocalCI.exe `
+                   -Certificate $cert -HashAlgorithm SHA256 `
+                   -TimestampServer 'http://timestamp.digicert.com'
+
+            Write-Host "assinatura: $($r.Status)"
+
+            # UnknownError aqui e o esperado: o runner nao confia num certificado
+            # auto-assinado, e nao deveria mesmo. O que importa e a assinatura
+            # estar no binario — quem confia e a maquina de destino.
+            if ($r.Status -notin 'Valid', 'UnknownError') {
+              Write-Host "::error::assinatura falhou: $($r.StatusMessage)"
+              exit 1
+            }
+          }
+          finally {
+            Remove-Item $pfx -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Nomear
+        shell: bash
+        run: |
+          mkdir -p entrega
+          cp publicado/UnityLocalCI.exe \
+             "entrega/BuildMaker-${{ steps.versao.outputs.numero }}-windows-x64.exe"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: entrega/*
+
+  # ----------------------------------------------------------------- Ubuntu
+
+  linux:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Versao a partir da tag
+        id: versao
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            echo "numero=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "numero=0.0.0-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Compilacao cruzada: o runner e amd64 e gera o arm64 tambem. O .NET faz
+      # isso sozinho — nao ha codigo nativo nosso para compilar, so o runtime que
+      # ja vem pronto para cada arquitetura.
+      - name: Empacotar
+        run: |
+          chmod +x tools/empacotar-deb.sh
+          tools/empacotar-deb.sh "${{ steps.versao.outputs.numero }}" "${{ matrix.arch }}"
+
+      # O pacote e instalado de verdade antes de virar release. Um .deb que nao
+      # instala e o tipo de defeito que so aparece na maquina de quem baixou.
+      # Vale so no amd64: o runner nao roda binario arm64.
+      - name: Instalar para conferir
+        if: matrix.arch == 'amd64'
+        run: |
+          set -euxo pipefail
+          sudo apt-get install -y ./publicado-deb/*.deb
+
+          # O comando responde e a unidade foi registrada.
+          buildmaker versao
+          systemctl list-unit-files buildmaker.service
+
+          # A configuracao precisa ser legivel por QUEM RODA O SERVICO, e nao
+          # por qualquer um: /etc/buildmaker e root:buildmaker 750, entao um
+          # 'test -f' comum falha aqui mesmo com o arquivo no lugar. Testar como
+          # o usuario buildmaker e o que de fato prova que o servico vai subir.
+          sudo -u buildmaker test -r /etc/buildmaker/appsettings.json
+
+          # E ninguem de fora le: o arquivo cita nomes de credencial.
+          if sudo -u nobody test -r /etc/buildmaker/appsettings.json; then
+            echo "::error::a configuracao esta legivel por usuarios de fora do grupo"
+            exit 1
+          fi
+
+          sudo apt-get remove -y buildmaker
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}
+          path: publicado-deb/*.deb
+
+  # ---------------------------------------------------------------- release
+
+  release:
+    needs: [windows, linux]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: baixados
+
+      - name: Juntar e somar
+        run: |
+          mkdir -p entrega
+          find baixados -type f \( -name '*.exe' -o -name '*.deb' \) -exec cp {} entrega/ \;
+
+          cd entrega
+          # Somas para quem quiser conferir que o arquivo baixado e o publicado.
+          sha256sum * > SHA256SUMS.txt
+          ls -la
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: entrega/*
+          generate_release_notes: true
+          body: |
+            ## Instalação
+
+            **Windows** — baixe o `.exe`, abra, clique em **Instalar**.
+            O programa funciona antes de instalar; instalar é o que cria os
+            atalhos, liga o início automático e registra em Aplicativos
+            Instalados. Depois de instalado o botão não aparece mais.
+
+            **Ubuntu** — o `.deb` da sua arquitetura:
+
+            ```
+            sudo apt install ./buildmaker_VERSAO_amd64.deb
+            sudo nano /etc/buildmaker/appsettings.json
+            buildmaker verificar
+            sudo systemctl enable --now buildmaker
+            ```
+
+            A versão do Ubuntu é de linha de comando, sem janela.

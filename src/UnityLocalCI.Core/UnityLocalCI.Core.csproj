@@ -1,4 +1,15 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!--
+      Sem "-windows": o Core e a parte que roda tambem no Linux.
+
+      As tres pecas que dependem do Windows — o cofre de credenciais, o job
+      object que mata a arvore de processos e a leitura de memoria livre — ja
+      estavam atras de interface. Agora a implementacao e escolhida em tempo de
+      execucao, e nao pelo alvo de compilacao.
+    -->
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" />
     <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="2.1.13" />

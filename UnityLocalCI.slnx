@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/UnityLocalCI.Cli/UnityLocalCI.Cli.csproj" />
     <Project Path="src/UnityLocalCI.Core/UnityLocalCI.Core.csproj" />
     <Project Path="src/UnityLocalCI.Worker/UnityLocalCI.Worker.csproj" />
   </Folder>

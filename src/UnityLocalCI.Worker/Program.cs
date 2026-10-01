@@ -29,6 +29,16 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        // Instalar e desinstalar sao modos deste mesmo executavel, e nao
+        // programas separados. E o que permite distribuir um arquivo so: quem
+        // baixa abre, clica em Instalar na janela, e o Windows depois desinstala
+        // chamando este binario de novo com --desinstalar.
+        if (args.Contains("--desinstalar", StringComparer.OrdinalIgnoreCase))
+            return Desinstalar(args.Contains("--silencioso", StringComparer.OrdinalIgnoreCase));
+
+        if (args.Contains("--instalar", StringComparer.OrdinalIgnoreCase))
+            return InstalarSemJanela(args);
+
         var headless = args.Contains("--service", StringComparer.OrdinalIgnoreCase)
                        || WindowsServiceHelpers.IsWindowsService();
 
@@ -38,6 +48,65 @@ internal static class Program
         // esperando uma tarefa, sem bombear mensagens, e armadilha conhecida de
         // COM.
         return Task.Run(() => RunHeadlessAsync(args)).GetAwaiter().GetResult();
+    }
+
+    /// <summary>
+    /// Desinstalacao chamada pelo Windows, por Configuracoes &gt; Aplicativos.
+    ///
+    /// Com --silencioso nao pergunta nada: e o QuietUninstallString, que o
+    /// Windows usa quando desinstala sem interacao. Sem ele, confirma — a
+    /// entrada em Aplicativos Instalados pode ser clicada sem querer.
+    /// </summary>
+    private static int Desinstalar(bool silencioso)
+    {
+        if (!silencioso)
+        {
+            var resposta = MessageBox.Show(
+                $"Remover o {AppNames.Display} desta maquina?" + Environment.NewLine + Environment.NewLine +
+                "O historico de builds e os artefatos ja gerados NAO serao apagados.",
+                AppNames.Display, MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+
+            if (resposta != DialogResult.Yes) return 1;
+        }
+
+        var passos = new List<string>();
+        try
+        {
+            Instalacao.Desinstalar(passos.Add);
+        }
+        catch (Exception excecao)
+        {
+            if (!silencioso)
+            {
+                MessageBox.Show(
+                    "Nao foi possivel concluir a remocao:" + Environment.NewLine + excecao.Message,
+                    AppNames.Display, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+
+            return 1;
+        }
+
+        return 0;
+    }
+
+    /// <summary>
+    /// Instalacao sem janela, para quem automatiza. O equivalente do
+    /// --silent-install do RustDesk.
+    /// </summary>
+    private static int InstalarSemJanela(string[] args)
+    {
+        try
+        {
+            Instalacao.Instalar(
+                _ => { },
+                inicioAutomatico: !args.Contains("--sem-inicio-automatico", StringComparer.OrdinalIgnoreCase));
+
+            return 0;
+        }
+        catch (Exception)
+        {
+            return 1;
+        }
     }
 
     private static async Task<int> RunHeadlessAsync(string[] args)
